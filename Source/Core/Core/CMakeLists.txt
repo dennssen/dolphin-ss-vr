@@ -695,6 +695,7 @@ PUBLIC
   videonull
   videoogl
   videosoftware
+  xr
 
 PRIVATE
   FatFs

@@ -41,6 +41,8 @@
 #include "VideoCommon/VideoEvents.h"
 #include "VideoCommon/XFStateManager.h"
 
+#include "XR/XRSession.h"
+
 using namespace BPFunctions;
 
 static constexpr Common::EnumMap<float, GammaCorrection::Invalid2_2> s_gammaLUT = {1.0f, 1.7f, 2.2f,
@@ -323,6 +325,8 @@ static void BPWritten(PixelShaderManager& pixel_shader_manager, XFStateManager& 
         framebuffer_copy_data.half_scale = PE_copy.half_scale;
         framebuffer_copy_data.y_scale = 1.0;
         framebuffer_copy_data.copy_height = copy_height;
+        XR::NoteCopy();
+        XR::TraceEvent('C');
         auto resolved_data = g_texture_cache->ResolveFramebufferCopyData(framebuffer_copy_data);
         g_texture_cache->CopyRenderTargetToTexture(std::ref(resolved_data));
       }
@@ -332,6 +336,11 @@ static void BPWritten(PixelShaderManager& pixel_shader_manager, XFStateManager& 
         // here. Not sure if there's a better spot to put this.
         // the number of lines copied is determined by the y scale * source efb height
         g_bounding_box->Disable(pixel_shader_manager);
+
+        XR::LatchPose();
+        XR::TraceEvent('X');
+        XR::FlushTrace();
+        XR::EndFrameStructure();
 
         float yScale;
         if (PE_copy.scale_invert)

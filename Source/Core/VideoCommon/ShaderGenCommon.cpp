@@ -237,6 +237,8 @@ void GenerateVSOutputMembers(ShaderCode& object, APIType api_type, u32 texgens,
       DefineOutputMember(object, api_type, qualifier, "float3", "WorldPos", -1, stage, "TEXCOORD",
                          texgens + 2);
     }
+    DefineOutputMember(object, api_type, qualifier, "float4", "pos_r", -1, stage, "TEXCOORD",
+                       texgens + 3);
   }
 }
 
@@ -244,6 +246,7 @@ void AssignVSOutputMembers(ShaderCode& object, std::string_view a, std::string_v
                            const ShaderHostConfig& host_config)
 {
   object.Write("\t{}.pos = {}.pos;\n", a, b);
+  object.Write("\t{}.pos_r = {}.pos_r;\n", a, b);
   object.Write("\t{}.colors_0 = {}.colors_0;\n", a, b);
   object.Write("\t{}.colors_1 = {}.colors_1;\n", a, b);
 

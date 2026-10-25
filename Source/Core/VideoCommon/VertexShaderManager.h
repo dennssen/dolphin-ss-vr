@@ -79,9 +79,11 @@ public:
 
 private:
   alignas(16) std::array<float, 16> m_projection_matrix;
+  u64 m_xr_pose_generation = 0;
 
   // track changes
   bool m_projection_graphics_mod_change = false;
 
   Common::Matrix44 LoadProjectionMatrix();
+  void StoreProjection(const Common::Matrix44& matrix);
 };

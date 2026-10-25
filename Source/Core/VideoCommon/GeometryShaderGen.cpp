@@ -238,6 +238,8 @@ ShaderCode GenerateGeometryShaderCode(APIType api_type, const ShaderHostConfig& 
     // This formula is based on page 13 of the "Nvidia 3D Vision Automatic, Best Practices Guide"
     out.Write("\tfloat hoffset = (eye == 0) ? " I_STEREOPARAMS ".x : " I_STEREOPARAMS ".y;\n");
     out.Write("\tf.pos.x += hoffset * (f.pos.w - " I_STEREOPARAMS ".z);\n");
+    out.Write("\tf.pos = (eye == 0) ? f.pos : f.pos_r;\n");
+    out.Write("\tif (xr_ortho != 0u) return;\n");
   }
 
   if (primitive_type == PrimitiveType::Lines)
@@ -342,6 +344,10 @@ static void EmitVertex(ShaderCode& out, const ShaderHostConfig& host_config,
   if (stereo)
   {
     // Select the output layer
+
+    // VR test: drop orthographic (HUD/menu) draws from the eye images.
+    out.Write("\tif (xr_ortho != 0u) return;\n");
+
     if (api_type == APIType::OpenGL || api_type == APIType::Vulkan)
       out.Write("\tgl_Layer = eye;\n");
     else

@@ -77,6 +77,9 @@ public:
   void DispatchComputeShader(const AbstractShader* shader, u32 groupsize_x, u32 groupsize_y,
                              u32 groupsize_z, u32 groups_x, u32 groups_y, u32 groups_z) override;
   bool BindBackbuffer(const ClearColor& clear_color = {}) override;
+  void RecordXRBlit(VkCommandBuffer cmd, VkImage src, int32_t src_w, int32_t src_h,
+                          VkImage dst, int32_t dst_w, int32_t dst_h);
+  void ClearXRImageDirect(VkImage image);
   void PresentBackbuffer() override;
   void SetFullscreen(bool enable_fullscreen) override;
   bool IsFullscreen() const override;

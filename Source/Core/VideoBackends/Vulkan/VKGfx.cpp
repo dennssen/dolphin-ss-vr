@@ -19,12 +19,15 @@
 #include "VideoBackends/Vulkan/VKSwapChain.h"
 #include "VideoBackends/Vulkan/VKTexture.h"
 #include "VideoBackends/Vulkan/VKVertexFormat.h"
+#include "VideoBackends/Vulkan/VulkanContext.h"
 
 #include "VideoCommon/DriverDetails.h"
 #include "VideoCommon/FramebufferManager.h"
 #include "VideoCommon/Present.h"
 #include "VideoCommon/RenderState.h"
 #include "VideoCommon/VideoConfig.h"
+
+#include "XR/XRSession.h"
 
 namespace Vulkan
 {
@@ -306,13 +309,61 @@ bool VKGfx::BindBackbuffer(const ClearColor& clear_color)
   return true;
 }
 
+void VKGfx::RecordXRBlit(VkCommandBuffer cmd, VkImage src, int32_t src_w, int32_t src_h,
+                          VkImage dst, int32_t dst_w, int32_t dst_h)
+{
+  VkImageMemoryBarrier barrier = {};
+  barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+  barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+  barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+  barrier.image = dst;
+  barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+
+  barrier.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+  barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+  barrier.srcAccessMask = 0;
+  barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+  vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0,
+                       nullptr, 0, nullptr, 1, &barrier);
+
+  VkImageBlit region = {};
+  region.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+  region.srcOffsets[1] = {src_w, src_h, 1};
+  region.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+  region.dstOffsets[1] = {dst_w, dst_h, 1};
+  vkCmdBlitImage(cmd, src, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, dst,
+                 VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region, VK_FILTER_LINEAR);
+
+  barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+  barrier.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+  barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+  barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+  vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                       VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0, 0, nullptr, 0, nullptr, 1,
+                       &barrier);
+}
+
 void VKGfx::PresentBackbuffer()
 {
+  XR::PollEvents();
+  const bool xr_rendering = XR::BeginFrame();
+
   // End drawing to backbuffer
   StateTracker::GetInstance()->EndRenderPass();
 
+  const u64 xr_fence = g_command_buffer_mgr->GetCurrentFenceCounter();
+
   if (m_swap_chain->IsCurrentImageValid())
   {
+    if (xr_rendering)
+    {
+      VKTexture* backbuffer = m_swap_chain->GetCurrentTexture();
+      const VkCommandBuffer cmd = g_command_buffer_mgr->GetCurrentCommandBuffer();
+      backbuffer->TransitionToLayout(cmd, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+      RecordXRBlit(cmd, backbuffer->GetImage(), backbuffer->GetWidth(), backbuffer->GetHeight(),
+                   XR::GetCurrentImage(), XR::GetSwapchainWidth(), XR::GetSwapchainHeight());
+    }
+
     // Transition the backbuffer to PRESENT_SRC to ensure all commands drawing
     // to it have finished before present.
     m_swap_chain->GetCurrentTexture()->TransitionToLayout(
@@ -329,6 +380,13 @@ void VKGfx::PresentBackbuffer()
   {
     g_command_buffer_mgr->SubmitCommandBuffer(true, false, true);
   }
+
+  // The clear has to finish on the GPU befor the runtime reads the image.
+  if (xr_rendering)
+  {
+    g_command_buffer_mgr->WaitForFenceCounter(xr_fence);
+  }
+  XR::EndFrame();
 
   // New cmdbuffer, so invalidate state.
   StateTracker::GetInstance()->InvalidateCachedState();

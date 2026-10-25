@@ -625,6 +625,12 @@ dolphin_find_optional_system_library_pkgconfig(FMT
 dolphin_add_bundled_library(ImGui Externals/imgui)
 dolphin_add_bundled_library(ImPlot Externals/implot)
 
+# Open XR External
+set(BUILD_API_LAYERS OFF CACHE BOOL "" FORCE)
+set(BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(BUILD_CONFORMANCE_TESTS OFF CACHE BOOL "" FORCE)
+dolphin_add_bundled_library(OpenXR-SDK Externals/OpenXR-SDK)
+
 dolphin_find_optional_system_library(glslang Externals/glslang DOLPHIN_TRY_VERSIONS 15 16)
 
 # SPIRV-Cross is used on Windows for GLSL to HLSL conversion for the Direct3D 11 and Direct3D 12

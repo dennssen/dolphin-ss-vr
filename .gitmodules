@@ -134,3 +134,6 @@
 	path = Externals/wil
 	url = https://github.com/microsoft/wil.git
 	shallow = true
+[submodule "Externals/OpenXR-SDK"]
+	path = Externals/OpenXR-SDK
+	url = https://github.com/KhronosGroup/OpenXR-SDK.git

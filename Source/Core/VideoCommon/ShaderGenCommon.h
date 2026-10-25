@@ -275,6 +275,7 @@ void WriteSwitch(ShaderCode& out, APIType ApiType, std::string_view variable,
 
 #define I_POSNORMALMATRIX "cpnmtx"
 #define I_PROJECTION "cproj"
+#define I_PROJECTION_R "cproj_r"
 #define I_MATERIALS "cmtrl"
 #define I_LIGHTS "clights"
 #define I_TEXMATRICES "ctexmtx"
@@ -298,6 +299,7 @@ static const char s_shader_uniforms[] = "\tuint    components;\n"
                                         "\tfloat4  missing_color_value;\n"
                                         "\tfloat4 " I_POSNORMALMATRIX "[6];\n"
                                         "\tfloat4 " I_PROJECTION "[4];\n"
+                                        "\tfloat4 " I_PROJECTION_R "[4];\n"
                                         "\tint4 " I_MATERIALS "[4];\n"
                                         "\tLight " I_LIGHTS "[8];\n"
                                         "\tfloat4 " I_TEXMATRICES "[24];\n"
@@ -327,4 +329,5 @@ static const char s_shader_uniforms[] = "\tuint    components;\n"
 static const char s_geometry_shader_uniforms[] = "\tfloat4 " I_STEREOPARAMS ";\n"
                                                  "\tfloat4 " I_LINEPTPARAMS ";\n"
                                                  "\tint4 " I_TEXOFFSET ";\n"
-                                                 "\tuint vs_expand;\n";
+                                                 "\tuint vs_expand;\n"
+                                                 "\tuint xr_ortho;\n";

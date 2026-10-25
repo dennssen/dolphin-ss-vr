@@ -73,6 +73,7 @@ struct alignas(16) VertexShaderConstants
 
   std::array<float4, 6> posnormalmatrix;
   std::array<float4, 4> projection;
+  std::array<float4, 4> projection_r;
   std::array<int4, 4> materials;
   struct Light
   {
@@ -119,5 +120,6 @@ struct alignas(16) GeometryShaderConstants
   float4 lineptparams;
   int4 texoffset;
   VSExpand vs_expand;  // Used by VS point/line expansion in ubershaders
-  u32 pad[3];
+  u32 xr_ortho;
+  u32 pad[2];
 };

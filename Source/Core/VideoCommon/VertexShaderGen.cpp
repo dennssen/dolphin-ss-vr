@@ -856,6 +856,16 @@ ShaderCode GenerateVertexShaderCode(APIType api_type, const ShaderHostConfig& ho
               "}}\n");
   }
 
+  // Right eye: its own projection, then the same fixups the left eye gets above.
+  out.Write("o.pos_r = vec4(dot(" I_PROJECTION_R "[0], vertex_output.position), dot(" I_PROJECTION_R
+            "[1], vertex_output.position), dot(" I_PROJECTION_R
+            "[2], vertex_output.position), dot(" I_PROJECTION_R "[3], vertex_output.position));\n");
+  out.Write("o.pos_r.z = o.pos_r.w * " I_PIXELCENTERCORRECTION ".w - "
+            "o.pos_r.z * " I_PIXELCENTERCORRECTION ".z;\n");
+  if (!host_config.backend_clip_control)
+    out.Write("o.pos_r.z = o.pos_r.z * 2.0 - o.pos_r.w;\n");
+  out.Write("o.pos_r.xy *= sign(" I_PIXELCENTERCORRECTION ".xy * float2(1.0, -1.0));\n");
+  out.Write("o.pos_r.xy = o.pos_r.xy - o.pos_r.w * " I_PIXELCENTERCORRECTION ".xy;\n");
   if (host_config.backend_geometry_shaders)
   {
     AssignVSOutputMembers(out, "vs", "o", uid_data->numTexGens, host_config);

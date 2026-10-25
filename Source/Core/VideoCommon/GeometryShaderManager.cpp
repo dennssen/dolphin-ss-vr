@@ -10,6 +10,8 @@
 #include "VideoCommon/VideoConfig.h"
 #include "VideoCommon/XFMemory.h"
 
+#include "XR/XRSession.h"
+
 static constexpr int LINE_PT_TEX_OFFSETS[8] = {0, 16, 8, 4, 2, 1, 1, 1};
 
 void GeometryShaderManager::Init()
@@ -46,6 +48,15 @@ void GeometryShaderManager::SetVSExpand(VSExpand expand)
 
 void GeometryShaderManager::SetConstants(PrimitiveType prim)
 {
+  const bool is_perspective = xfmem.projection.type == ProjectionType::Perspective;
+  XR::TraceEvent(is_perspective ? 'P' : 'O');
+  const u32 xr_ortho = XR::IsUiDraw(!is_perspective) ? 1u : 0u;
+  if (constants.xr_ortho != xr_ortho)
+  {
+    constants.xr_ortho = xr_ortho;
+    dirty = true;
+  }
+
   if (m_projection_changed && g_ActiveConfig.stereo_mode != StereoMode::Off)
   {
     m_projection_changed = false;

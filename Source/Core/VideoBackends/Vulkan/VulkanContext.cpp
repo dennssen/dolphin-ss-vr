@@ -12,8 +12,11 @@
 #include "Common/Logging/Log.h"
 #include "Common/MsgHandler.h"
 
+#include "VideoBackends/Vulkan/VulkanLoader.h"
 #include "VideoCommon/DriverDetails.h"
 #include "VideoCommon/VideoCommon.h"
+
+#include "XR/XRSession.h"
 
 namespace Vulkan
 {
@@ -261,7 +264,12 @@ VkInstance VulkanContext::CreateVulkanInstance(WindowSystemType wstype, bool ena
   }
 
   VkInstance instance;
-  VkResult res = vkCreateInstance(&instance_create_info, nullptr, &instance);
+  VkResult res;
+  if (XR::IsActive())
+    res = XR::CreateVulkanInstance(&instance_create_info, vkGetInstanceProcAddr, &instance);
+  else
+    res = vkCreateInstance(&instance_create_info, nullptr, &instance);
+
   if (res != VK_SUCCESS)
   {
     LOG_VULKAN_ERROR(res, "vkCreateInstance failed: ");
@@ -811,7 +819,11 @@ bool VulkanContext::CreateDevice(VkSurfaceKHR surface, bool enable_validation_la
     device_info.ppEnabledLayerNames = &VALIDATION_LAYER_NAME;
   }
 
-  VkResult res = vkCreateDevice(m_physical_device, &device_info, nullptr, &m_device);
+  VkResult res;
+  if (XR::IsActive())
+    res = XR::CreateVulkanDevice(m_physical_device, &device_info, vkGetInstanceProcAddr, &m_device);
+  else
+   res = vkCreateDevice(m_physical_device, &device_info, nullptr, &m_device);
   if (res != VK_SUCCESS)
   {
     LOG_VULKAN_ERROR(res, "vkCreateDevice failed: ");

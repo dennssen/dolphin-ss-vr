@@ -72,6 +72,7 @@
 #include "Core/State.h"
 #include "Core/System.h"
 #include "Core/WiiRoot.h"
+#include "XR/XRSession.h"
 
 #ifdef USE_MEMORYWATCHER
 #include "Core/MemoryWatcher.h"
@@ -219,6 +220,8 @@ bool Init(Core::System& system, std::unique_ptr<BootParameters> boot, const Wind
 {
   std::lock_guard lock(s_core_mutex);
 
+  XR::Init();
+
   if (s_emu_thread.joinable())
   {
     if (!IsUninitialized(system))
@@ -280,6 +283,8 @@ void Stop(Core::System& system)  // - Hammertime!
   HostDispatchJobs(system);
 
   system.GetFifo().EmulatorState(false);
+
+  XR::Shutdown();
 
   INFO_LOG_FMT(CONSOLE, "Stop [Main Thread]\t\t---- Shutting down ----");
 

@@ -238,6 +238,7 @@ target_link_libraries(videocommon
 PUBLIC
   core
   glslang::glslang
+  xr
 PRIVATE
   fmt::fmt
   spng::spng

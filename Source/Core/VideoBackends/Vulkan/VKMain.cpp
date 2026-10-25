@@ -1,6 +1,7 @@
 // Copyright 2016 Dolphin Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include "Common/Logging/Log.h"
 #include "VideoBackends/Vulkan/VideoBackend.h"
 
 #include "Common/Logging/LogManager.h"
@@ -18,6 +19,9 @@
 
 #include "VideoCommon/TextureCacheBase.h"
 #include "VideoCommon/VideoConfig.h"
+
+#include "XR/XRSession.h"
+#include "vulkan/vulkan_core.h"
 
 #if defined(VK_USE_PLATFORM_METAL_EXT)
 #include <objc/message.h>
@@ -165,15 +169,32 @@ bool VideoBackend::Initialize(const WindowSystemInfo& wsi)
     selected_adapter_index = 0;
   }
 
+  VkPhysicalDevice selected_gpu = gpu_list[selected_adapter_index];
+  if (XR::IsActive())
+  {
+    const VkPhysicalDevice xr_gpu = XR::GetVulkanPhysicalDevice(instance);
+    if (xr_gpu != VK_NULL_HANDLE)
+    {
+      selected_gpu = xr_gpu;
+      INFO_LOG_FMT(VIDEO, "XR: using the headset's GPU");
+    }
+  }
+
   // Now we can create the Vulkan device. VulkanContext takes ownership of the instance and surface.
-  g_vulkan_context =
-      VulkanContext::Create(instance, gpu_list[selected_adapter_index], surface, enable_debug_utils,
+  g_vulkan_context = VulkanContext::Create(instance, selected_gpu, surface, enable_debug_utils,
                             enable_validation_layer, vk_api_version);
   if (!g_vulkan_context)
   {
     PanicAlertFmt("Failed to create Vulkan device");
     UnloadVulkanLibrary();
     return false;
+  }
+
+  if (XR::IsActive())
+  {
+    XR::CreateSession(g_vulkan_context->GetVulkanInstance(), g_vulkan_context->GetPhysicalDevice(),
+                      g_vulkan_context->GetDevice(),
+                      g_vulkan_context->GetGraphicsQueueFamilyIndex(), 0);
   }
 
   // Since VulkanContext maintains a copy of the device features and properties, we can use this
@@ -238,6 +259,7 @@ bool VideoBackend::Initialize(const WindowSystemInfo& wsi)
 
 void VideoBackend::Shutdown()
 {
+  XR::DestroySession();
   if (g_vulkan_context)
     vkDeviceWaitIdle(g_vulkan_context->GetDevice());
 

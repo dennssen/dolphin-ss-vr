@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstring>
 #include <iterator>
+#include <cstdlib>
 
 #include "Common/ChunkFile.h"
 #include "Common/CommonTypes.h"
@@ -25,6 +26,8 @@
 #include "VideoCommon/VideoConfig.h"
 #include "VideoCommon/XFMemory.h"
 #include "VideoCommon/XFStateManager.h"
+
+#include "XR/XRSession.h"
 
 void VertexShaderManager::Init()
 {
@@ -119,13 +122,64 @@ Common::Matrix44 VertexShaderManager::LoadProjectionMatrix()
   return corrected_matrix;
 }
 
+void VertexShaderManager::StoreProjection(const Common::Matrix44& matrix)
+{
+  const bool is_3d = xfmem.projection.type == ProjectionType::Perspective;
+
+  XR::EyeData eyes[2];
+  if (is_3d && XR::IsActive() && XR::GetEyeData(eyes))
+  {
+    const auto build = [&](const XR::EyeData& eye) {
+      Common::Matrix44 p = matrix;
+      const float inv_w = 1.0f / (eye.tan_right - eye.tan_left);
+      const float inv_h = 1.0f / (eye.tan_up - eye.tan_down);
+      p.data[0] = 2.0f * inv_w;
+      p.data[1] = 0.0f;
+      p.data[2] = (eye.tan_right + eye.tan_left) * inv_w;
+      p.data[3] = 0.0f;
+      p.data[4] = 0.0f;
+      p.data[5] = 2.0f * inv_h;
+      p.data[6] = (eye.tan_up + eye.tan_down) * inv_h;
+      p.data[7] = 0.0f;
+            static const bool s_fixed = std::getenv("DOLPHIN_SS_VR_FIXED") != nullptr;
+      std::array<float, 16> view = eye.view;
+      if (s_fixed)  // synthetic yaw swing of about 20 degrees, no headset involved
+      {
+        const float yaw = 0.35f * std::sin(static_cast<float>(XR::GetPoseGeneration()) * 0.3f);
+        const float c = std::cos(yaw);
+        const float s = std::sin(yaw);
+        view = {c, 0.0f, s, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, -s, 0.0f, c, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f};
+      }
+      return p * Common::Matrix44::FromArray(view);
+    };
+    const Common::Matrix44 left = build(eyes[0]);
+    const Common::Matrix44 right = build(eyes[1]);
+    memcpy(constants.projection.data(), left.data.data(), 4 * sizeof(float4));
+    memcpy(constants.projection_r.data(), right.data.data(), 4 * sizeof(float4));
+    return;
+  }
+
+  // Fallback: fixed eye shift, and flat draws (HUD, menus) get no shift;
+  static const float s_half_sep = [] {
+    const char* v = std::getenv("DOLPHIN_SS_VR_EYE");
+    return v ? static_cast<float>(std::atof(v)) : 3.0f;
+  }();
+
+  const float sep = is_3d ? s_half_sep : 0.0f;
+  Common::Matrix44 left = matrix * Common::Matrix44::Translate({sep, 0, 0});
+  Common::Matrix44 right = matrix * Common::Matrix44::Translate({-sep, 0, 0});
+  memcpy(constants.projection.data(), left.data.data(), 4 * sizeof(float4));
+  memcpy(constants.projection_r.data(), right.data.data(), 4 * sizeof(float4));
+}
+
 void VertexShaderManager::SetProjectionMatrix(XFStateManager& xf_state_manager)
 {
   if (xf_state_manager.DidProjectionChange() || g_freelook_camera.GetController()->IsDirty())
   {
     xf_state_manager.ResetProjection();
     auto corrected_matrix = LoadProjectionMatrix();
-    memcpy(constants.projection.data(), corrected_matrix.data.data(), 4 * sizeof(float4));
+
+    StoreProjection(corrected_matrix);
   }
 }
 
@@ -411,11 +465,14 @@ void VertexShaderManager::SetConstants(std::span<const std::string> textures,
     }
   }
 
+  const bool xr_pose_changed = XR::IsActive() && XR::GetPoseGeneration() != m_xr_pose_generation;
+
   if (xf_state_manager.DidProjectionChange() || g_freelook_camera.GetController()->IsDirty() ||
-      !projection_actions.empty() || m_projection_graphics_mod_change)
+      !projection_actions.empty() || m_projection_graphics_mod_change || xr_pose_changed)
   {
     xf_state_manager.ResetProjection();
     m_projection_graphics_mod_change = !projection_actions.empty();
+    m_xr_pose_generation = XR::GetPoseGeneration();
 
     auto corrected_matrix = LoadProjectionMatrix();
 
@@ -425,7 +482,7 @@ void VertexShaderManager::SetConstants(std::span<const std::string> textures,
       action->OnProjection(&projection);
     }
 
-    memcpy(constants.projection.data(), corrected_matrix.data.data(), 4 * sizeof(float4));
+    StoreProjection(corrected_matrix);
     dirty = true;
   }
 

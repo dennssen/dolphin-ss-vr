@@ -1,0 +1,48 @@
+#pragma once
+
+#include <array>
+#include <cstdint>
+#include <vulkan/vulkan.h>
+
+#include "vulkan/vulkan_core.h"
+
+namespace XR
+{
+  bool Init();
+  void Shutdown();
+  bool IsActive();
+
+  VkResult CreateVulkanInstance(const VkInstanceCreateInfo* info,
+                                PFN_vkGetInstanceProcAddr get_proc, VkInstance* out_instance);
+  VkPhysicalDevice GetVulkanPhysicalDevice(VkInstance instance);
+  VkResult CreateVulkanDevice(VkPhysicalDevice physical_device, const VkDeviceCreateInfo* info,
+                              PFN_vkGetInstanceProcAddr get_proc, VkDevice* out_device);
+  bool CreateSession(VkInstance vk_instance, VkPhysicalDevice physical_device, VkDevice device,
+                     uint32_t queue_family_index, uint32_t queue_index);
+  void DestroySession();
+  void PollEvents();
+  bool BeginFrame();
+  VkImage GetCurrentImage();
+  void EndFrame();
+  bool CreateSwapchain(uint32_t width, uint32_t height);
+  uint32_t GetSwapchainWidth();
+  uint32_t GetSwapchainHeight();
+
+  struct EyeData
+  {
+    std::array<float, 16> view; // row-major: game camera space -> this eye's space, in game units
+    float tan_left, tan_right, tan_up, tan_down;
+  };
+
+  bool GetEyeData(EyeData out[2]);
+  void Recenter();
+  uint64_t GetPoseGeneration();
+  void LatchPose();
+
+  bool IsUiDraw(bool is_ortho);
+  void NoteCopy();
+  void EndFrameStructure();
+
+  void TraceEvent(char c);
+  void FlushTrace();
+}
