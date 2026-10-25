@@ -43,6 +43,8 @@
 #include "VideoCommon/XFMemory.h"
 #include "VideoCommon/XFStateManager.h"
 
+#include "XR/XRSession.h"
+
 std::unique_ptr<VertexManagerBase> g_vertex_manager;
 
 using OpcodeDecoder::Primitive;
@@ -560,6 +562,7 @@ void VertexManagerBase::Flush()
   std::vector<std::string> texture_names;
   Common::SmallVector<u32, 8> texture_units;
   std::array<SamplerState, 8> samplers;
+  bool xr_uses_efb_copy = false;
   if (!m_cull_all)
   {
     if (!g_ActiveConfig.bGraphicMods)
@@ -569,6 +572,8 @@ void VertexManagerBase::Flush()
         const auto cache_entry = g_texture_cache->Load(i);
         if (!cache_entry)
           continue;
+        if (cache_entry->IsEfbCopy())
+          xr_uses_efb_copy = true;
         const float custom_tex_scale = cache_entry->GetWidth() / float(cache_entry->native_width);
         samplers[i] = TextureCacheBase::GetSamplerState(
             i, custom_tex_scale, cache_entry->is_custom_tex, cache_entry->has_arbitrary_mips);
@@ -581,6 +586,7 @@ void VertexManagerBase::Flush()
         const auto cache_entry = g_texture_cache->Load(i);
         if (cache_entry)
         {
+          xr_uses_efb_copy = true;
           if (!Common::Contains(texture_names, cache_entry->texture_info_name))
           {
             texture_names.push_back(cache_entry->texture_info_name);
@@ -629,6 +635,7 @@ void VertexManagerBase::Flush()
 
     if (!skip)
     {
+      XR::NoteDrawTextures(xr_uses_efb_copy);
       UpdatePipelineConfig();
       UpdatePipelineObject();
       if (m_current_pipeline_object)

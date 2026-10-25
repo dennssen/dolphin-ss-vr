@@ -31,8 +31,19 @@ namespace
   XrFrameState s_frame_state{XR_TYPE_FRAME_STATE};
   XrSwapchain s_swapchain = XR_NULL_HANDLE;
   std::vector<XrSwapchainImageVulkan2KHR> s_swapchain_images;
+  XrSwapchain s_ui_swapchain = XR_NULL_HANDLE;
+  std::vector<XrSwapchainImageVulkan2KHR> s_ui_images;
+  bool s_ui_acquired = false;
+  uint32_t s_ui_index = 0;
+  uint32_t s_ui_width = 0;
+  uint32_t s_ui_height = 0;
+  uint32_t s_ui_content_w = 0;
+  uint32_t s_ui_content_h = 0;
   XrSpace s_space = XR_NULL_HANDLE;
   std::atomic<uint64_t> s_pose_generation{0};
+  bool s_draw_uses_efb_copy = false;
+  bool s_seen_perspective = false;
+  bool s_prev_frame_had_perspective = false;
   uint32_t s_draw_index = 0;
   uint32_t s_ui_start = ~0u; // from the previous frame; ~0 means nothing counts as UI
   uint32_t s_ui_start_next = ~0u; // being collected for the next frame
@@ -397,6 +408,13 @@ namespace XR
       s_space = XR_NULL_HANDLE;
     }
 
+    if (s_ui_swapchain != XR_NULL_HANDLE)
+    {
+      xrDestroySwapchain(s_ui_swapchain);
+      s_ui_swapchain = XR_NULL_HANDLE;
+      s_ui_images.clear();
+    }
+
     if (s_swapchain != XR_NULL_HANDLE)
     {
       xrDestroySwapchain(s_swapchain);
@@ -527,6 +545,87 @@ namespace XR
     return s_image_acquired;
   }
 
+  static bool CreateUISwapchain(uint32_t width, uint32_t height)
+  {
+    uint32_t format_count = 0;
+    xrEnumerateSwapchainFormats(s_session, 0, &format_count, nullptr);
+    std::vector<int64_t> formats(format_count);
+    xrEnumerateSwapchainFormats(s_session, format_count, &format_count, formats.data());
+
+    for (const int64_t f : formats)
+      INFO_LOG_FMT(VIDEO, "XR: runtime offers swapchain format {}", f);
+
+    // RGBA SRGB only: the UI is raw-copied from an RGBA8 texture, so channel order must match.
+    const int64_t preferred[] = {VK_FORMAT_R8G8B8A8_SRGB};
+    int64_t chosen = 0;
+    for (const int64_t format : preferred)
+    {
+      if (std::find(formats.begin(), formats.end(), format) != formats.end())
+      {
+        chosen = format;
+        break;
+      }
+    }
+    if (chosen == 0)
+    {
+      WARN_LOG_FMT(VIDEO, "XR: no usable UI swapchain format");
+      return false;
+    }
+
+    XrSwapchainCreateInfo info{XR_TYPE_SWAPCHAIN_CREATE_INFO};
+    info.usageFlags = XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT |
+                      XR_SWAPCHAIN_USAGE_TRANSFER_DST_BIT | XR_SWAPCHAIN_USAGE_SAMPLED_BIT;
+    info.format = chosen;
+    info.sampleCount = 1;
+    info.width = width;
+    info.height = height;
+    info.faceCount = 1;
+    info.arraySize = 1;
+    info.mipCount = 1;
+    if (XR_FAILED(xrCreateSwapchain(s_session, &info, &s_ui_swapchain)))
+    {
+      WARN_LOG_FMT(VIDEO, "XR: UI xrCreateSwapchain failed");
+      s_ui_swapchain = XR_NULL_HANDLE;
+      return false;
+    }
+
+    uint32_t image_count = 0;
+    xrEnumerateSwapchainImages(s_ui_swapchain, 0, &image_count, nullptr);
+    s_ui_images.assign(image_count,
+                       XrSwapchainImageVulkan2KHR{XR_TYPE_SWAPCHAIN_IMAGE_VULKAN2_KHR});
+    xrEnumerateSwapchainImages(s_ui_swapchain, image_count, &image_count,
+                            reinterpret_cast<XrSwapchainImageBaseHeader*>(s_ui_images.data()));
+    s_ui_width = width;
+    s_ui_height = height;
+    INFO_LOG_FMT(VIDEO, "XR: UI swapchain created, format {}, {} images, {}x{}",
+                 static_cast<int>(chosen), image_count, width, height);
+    return true;
+  }
+
+  VkImage AcquireUIImage(uint32_t width, uint32_t height)
+  {
+    if (!s_frame_begun)
+    {
+      return VK_NULL_HANDLE;
+    }
+
+    if (s_ui_swapchain == XR_NULL_HANDLE && !CreateUISwapchain(width, height))
+    {
+      return VK_NULL_HANDLE;
+    }
+
+    XrSwapchainImageAcquireInfo acquire_info{XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO};
+    XrSwapchainImageWaitInfo wait_info{XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO};
+    wait_info.timeout = XR_INFINITE_DURATION;
+    if (XR_FAILED(xrAcquireSwapchainImage(s_ui_swapchain, &acquire_info, &s_ui_index)) || XR_FAILED(xrWaitSwapchainImage(s_ui_swapchain, &wait_info)))
+    {
+      return VK_NULL_HANDLE;
+    }
+
+    s_ui_acquired = true;
+    return s_ui_images[s_ui_index].image;
+  }
+
   VkImage GetCurrentImage()
   {
     return s_image_acquired ? s_swapchain_images[s_image_index].image : VK_NULL_HANDLE;
@@ -539,7 +638,7 @@ namespace XR
 
     XrCompositionLayerProjectionView proj_views[2] = {};
     XrCompositionLayerProjection projection{XR_TYPE_COMPOSITION_LAYER_PROJECTION};
-    const XrCompositionLayerBaseHeader* layers[1] = {};
+    const XrCompositionLayerBaseHeader* layers[2] = {};
     uint32_t layer_count = 0;
 
     if (s_image_acquired)
@@ -573,6 +672,48 @@ namespace XR
         layers[0] = reinterpret_cast<const XrCompositionLayerBaseHeader*>(&projection);
         layer_count = 1;
       }
+    }
+
+    XrCompositionLayerQuad quad{XR_TYPE_COMPOSITION_LAYER_QUAD};
+    if (s_ui_acquired)
+    {
+      XrSwapchainImageReleaseInfo ui_release{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
+      xrReleaseSwapchainImage(s_ui_swapchain, &ui_release);
+      s_ui_acquired = false;
+
+      quad.layerFlags = 0;  // opaque for now; alpha blending comes with the clear-alpha step
+      quad.space = s_space;
+      quad.eyeVisibility = XR_EYE_VISIBILITY_BOTH;
+      quad.subImage.swapchain = s_ui_swapchain;
+      quad.subImage.imageRect.offset = {0, 0};
+      const uint32_t crop_w = (s_ui_content_w > 0) ? std::min(s_ui_content_w, s_ui_width) : s_ui_width;
+      const uint32_t crop_h = (s_ui_content_h > 0) ? std::min(s_ui_content_h, s_ui_height) : s_ui_height;
+      quad.subImage.imageRect.extent = {static_cast<int32_t>(crop_w), static_cast<int32_t>(crop_h)};
+      quad.subImage.imageArrayIndex = 0;
+      // Place the panel 1.5 m in front of the game's reference pose, using only its yaw
+      // so the panel stays upright and level.
+      XrPosef ref;
+      bool have_ref;
+      {
+        std::lock_guard<std::mutex> lock(s_view_mutex);
+        ref = s_ref;
+        have_ref = s_have_ref;
+      }
+      if (have_ref)
+      {
+        const XrQuaternionf& q = ref.orientation;
+        const float yaw = std::atan2(2.0f * (q.x * q.z + q.w * q.y), 1.0f - 2.0f * (q.x * q.x + q.y * q.y));
+        quad.pose.orientation = {0.0f, std::sin(yaw * 0.5f), 0.0f, std::cos(yaw * 0.5f)};
+        quad.pose.position = {ref.position.x - std::sin(yaw) * 1.5f, ref.position.y,
+                              ref.position.z - std::cos(yaw) * 1.5f};
+      }
+      else
+      {
+        quad.pose.orientation = {0.0f, 0.0f, 0.0f, 1.0f};
+        quad.pose.position = {0.0f, 0.0f, -1.5f};
+      }
+      quad.size = {2.0f, 2.0f * 9.0f / 16.0f};
+      layers[layer_count++] = reinterpret_cast<const XrCompositionLayerBaseHeader*>(&quad);
     }
 
     XrFrameEndInfo end_info{XR_TYPE_FRAME_END_INFO};
@@ -711,8 +852,23 @@ namespace XR
 
   bool IsUiDraw(bool is_ortho)
   {
-    const uint32_t index = s_draw_index++;
-    return is_ortho && index >= s_ui_start;
+    if (!is_ortho)
+    {
+      s_seen_perspective = true;
+      return false;
+    }
+    if (s_draw_uses_efb_copy)
+    {
+      return false;
+    }
+    // After the first 3D draw of a frame, or in a frame following one with no 3D at all.
+    return s_seen_perspective || !s_prev_frame_had_perspective;
+  }
+
+  void SetUIContentSize(uint32_t width, uint32_t height)
+  {
+    s_ui_content_w = width;
+    s_ui_content_h = height;
   }
 
   void NoteCopy()
@@ -720,15 +876,32 @@ namespace XR
     s_ui_start_next = s_draw_index;
   }
 
+  void NoteDrawTextures(bool uses_efb_copy)
+  {
+    s_draw_uses_efb_copy = uses_efb_copy;
+  }
+
   void EndFrameStructure()
   {
-    s_ui_start = s_ui_start_next;
-    s_ui_start_next = ~0u;
+    s_prev_frame_had_perspective = s_seen_perspective;
+    s_seen_perspective = false;
     s_draw_index = 0;
   }
 
   void TraceEvent(char c)
   {
+    if (s_draw_uses_efb_copy)
+    {
+      if (c == 'O')
+      {
+        c = 'E';
+      }
+      else if (c == 'U')
+      {
+        c = 'V';
+      }
+    }
+
     if (c == s_trace_last || s_trace.size() >= 200)
     {
       return;
@@ -740,8 +913,17 @@ namespace XR
   void FlushTrace()
   {
     static int s_3d_frames = 0;
-    if (s_trace.find('P') != std::string::npos && (s_3d_frames++ % 30) == 0)
-      INFO_LOG_FMT(VIDEO, "XR: pass trace {}", s_trace);
+    static std::string s_last_2d;
+    if (s_trace.find('P') != std::string::npos)
+    {
+      if ((s_3d_frames++ % 30) == 0)
+        INFO_LOG_FMT(VIDEO, "XR: pass trace {}", s_trace);
+    }
+    else if (s_trace != s_last_2d)
+    {
+      s_last_2d = s_trace;
+      INFO_LOG_FMT(VIDEO, "XR: 2D pass trace {}", s_trace);
+    }
     s_trace.clear();
     s_trace_last = 0;
   }

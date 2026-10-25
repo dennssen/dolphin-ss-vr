@@ -26,6 +26,8 @@
 #include "VideoCommon/VideoCommon.h"
 #include "VideoCommon/VideoConfig.h"
 
+#include "XR/XRSession.h"
+
 // Maximum number of pixels poked in one batch * 6
 constexpr size_t MAX_POKE_VERTICES = 32768;
 
@@ -147,7 +149,13 @@ AbstractTextureFormat FramebufferManager::GetEFBDepthCopyFormat()
 
 static u32 CalculateEFBLayers()
 {
-  return (g_ActiveConfig.stereo_mode != StereoMode::Off) ? 2 : 1;
+  if (g_ActiveConfig.stereo_mode == StereoMode::Off)
+  {
+    return 1;
+  }
+
+  // Layers 0 and 1 are the left and right eye. Layer 2 exists only under XR and will hold the UI.
+  return XR::IsActive() ? 3 : 2;
 }
 
 TextureConfig FramebufferManager::GetEFBColorTextureConfig(u32 width, u32 height)
@@ -234,6 +242,10 @@ bool FramebufferManager::CreateEFBFramebuffer(int efb_scale)
   const TextureConfig efb_color_texture_config = GetEFBColorTextureConfig(width, height);
   const TextureConfig efb_depth_texture_config = GetEFBDepthTextureConfig(width, height);
 
+  INFO_LOG_FMT(VIDEO, "XR: EFB layers = {}, stereo_mode = {}, XR active = {}",
+             efb_color_texture_config.layers, static_cast<int>(g_ActiveConfig.stereo_mode),
+             XR::IsActive());
+
   // We need a second texture to swap with for changing pixel formats
   m_efb_color_texture = g_gfx->CreateTexture(efb_color_texture_config, "EFB color texture");
   m_efb_depth_texture = g_gfx->CreateTexture(efb_depth_texture_config, "EFB depth texture");
@@ -248,6 +260,18 @@ bool FramebufferManager::CreateEFBFramebuffer(int efb_scale)
       g_gfx->CreateFramebuffer(m_efb_convert_color_texture.get(), m_efb_depth_texture.get());
   if (!m_efb_framebuffer || !m_efb_convert_framebuffer)
     return false;
+
+  if (efb_color_texture_config.layers >= 3)
+  {
+    m_xr_ui_texture =
+        g_gfx->CreateTexture(TextureConfig(width, height, 1, 1, 1, efb_color_texture_config.format,
+                                           0, AbstractTextureType::Texture_2DArray),
+                             "XR UI texture");
+    if (!m_xr_ui_texture)
+    {
+      return false;
+    }
+  }
 
   // Create resolved textures if MSAA is on
   if (g_ActiveConfig.MultisamplingEnabled())
@@ -309,6 +333,7 @@ void FramebufferManager::DestroyEFBFramebuffer()
   m_efb_resolve_color_texture.reset();
   m_efb_depth_resolve_framebuffer.reset();
   m_efb_depth_resolve_texture.reset();
+  m_xr_ui_texture.reset();
 }
 
 void FramebufferManager::BindEFBFramebuffer()
@@ -350,6 +375,26 @@ AbstractTexture* FramebufferManager::ResolveEFBColorTexture(const MathUtil::Rect
   }
   m_efb_resolve_color_texture->FinishedRendering();
   return m_efb_resolve_color_texture.get();
+}
+
+void FramebufferManager::CaptureXRUILayer()
+{
+  if (!m_xr_ui_texture || GetEFBLayers() < 3)
+  {
+    return;
+  }
+
+  const MathUtil::Rectangle<int> rect(0, 0, GetEFBWidth(), GetEFBHeight());
+  AbstractTexture* src = ResolveEFBColorTexture(rect);
+  m_xr_ui_texture->CopyRectangleFromTexture(src, rect, 2, 0, rect, 0, 0);
+  m_xr_ui_texture->FinishedRendering();
+
+  static bool logged = false;
+  if (!logged)
+  {
+    logged = true;
+    INFO_LOG_FMT(VIDEO, "XR: UI layer captured ({}x{})", GetEFBWidth(), GetEFBHeight());
+  }
 }
 
 AbstractTexture* FramebufferManager::ResolveEFBDepthTexture(const MathUtil::Rectangle<int>& region,

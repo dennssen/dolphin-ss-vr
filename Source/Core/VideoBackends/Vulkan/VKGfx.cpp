@@ -343,6 +343,42 @@ void VKGfx::RecordXRBlit(VkCommandBuffer cmd, VkImage src, int32_t src_w, int32_
                        &barrier);
 }
 
+// Raw copy, no format conversion. The game's pixels are already display-encoded and the
+// compositor decodes the SRGB image when it reads it, so a blit (which would encode again)
+// must not be used for the UI.
+[[maybe_unused]] static void RecordXRUICopy(VkCommandBuffer cmd, VkImage src, uint32_t width, uint32_t height,
+                           VkImage dst)
+{
+    VkImageMemoryBarrier barrier = {};
+  barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+  barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+  barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+  barrier.image = dst;
+  barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+
+  barrier.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+  barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+  barrier.srcAccessMask = 0;
+  barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+  vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0,
+                       nullptr, 0, nullptr, 1, &barrier);
+
+  VkImageCopy region = {};
+  region.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+  region.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+  region.extent = {width, height, 1};
+  vkCmdCopyImage(cmd, src, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, dst,
+                 VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+
+  barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+  barrier.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+  barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+  barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+  vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                       VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0, 0, nullptr, 0, nullptr, 1,
+                       &barrier);
+}
+
 void VKGfx::PresentBackbuffer()
 {
   XR::PollEvents();
@@ -362,6 +398,16 @@ void VKGfx::PresentBackbuffer()
       backbuffer->TransitionToLayout(cmd, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
       RecordXRBlit(cmd, backbuffer->GetImage(), backbuffer->GetWidth(), backbuffer->GetHeight(),
                    XR::GetCurrentImage(), XR::GetSwapchainWidth(), XR::GetSwapchainHeight());
+      VKTexture* ui = static_cast<VKTexture*>(g_framebuffer_manager->GetXRUITexture());
+      if (ui)
+      {
+        const VkImage ui_image = XR::AcquireUIImage(ui->GetWidth(), ui->GetHeight());
+        if (ui_image != VK_NULL_HANDLE)
+        {
+          ui->TransitionToLayout(cmd, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+          RecordXRUICopy(cmd, ui->GetImage(), ui->GetWidth(), ui->GetHeight(), ui_image);
+        }
+      }
     }
 
     // Transition the backbuffer to PRESENT_SRC to ensure all commands drawing

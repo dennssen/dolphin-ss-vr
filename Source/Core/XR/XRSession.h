@@ -23,6 +23,7 @@ namespace XR
   void PollEvents();
   bool BeginFrame();
   VkImage GetCurrentImage();
+  VkImage AcquireUIImage(uint32_t width, uint32_t height);
   void EndFrame();
   bool CreateSwapchain(uint32_t width, uint32_t height);
   uint32_t GetSwapchainWidth();
@@ -40,9 +41,11 @@ namespace XR
   void LatchPose();
 
   bool IsUiDraw(bool is_ortho);
+  void SetUIContentSize(uint32_t width, uint32_t height);
   void NoteCopy();
   void EndFrameStructure();
 
   void TraceEvent(char c);
+  void NoteDrawTextures(bool uses_efb_copy);
   void FlushTrace();
 }

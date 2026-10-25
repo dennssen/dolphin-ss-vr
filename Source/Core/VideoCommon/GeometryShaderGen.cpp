@@ -239,7 +239,6 @@ ShaderCode GenerateGeometryShaderCode(APIType api_type, const ShaderHostConfig& 
     out.Write("\tfloat hoffset = (eye == 0) ? " I_STEREOPARAMS ".x : " I_STEREOPARAMS ".y;\n");
     out.Write("\tf.pos.x += hoffset * (f.pos.w - " I_STEREOPARAMS ".z);\n");
     out.Write("\tf.pos = (eye == 0) ? f.pos : f.pos_r;\n");
-    out.Write("\tif (xr_ortho != 0u) return;\n");
   }
 
   if (primitive_type == PrimitiveType::Lines)
@@ -343,19 +342,21 @@ static void EmitVertex(ShaderCode& out, const ShaderHostConfig& host_config,
 
   if (stereo)
   {
-    // Select the output layer
-
-    // VR test: drop orthographic (HUD/menu) draws from the eye images.
-    out.Write("\tif (xr_ortho != 0u) return;\n");
+    // XR: UI draws are emitted once, by the eye-0 pass, into layer 2. Everything else to its eye.
+    out.Write("\tif (xr_ortho != 0u && eye != 0) return;\n");
 
     if (api_type == APIType::OpenGL || api_type == APIType::Vulkan)
-      out.Write("\tgl_Layer = eye;\n");
+    {
+      out.Write("\tgl_Layer = (xr_ortho != 0u) ? 2 : eye;\n");
+    }
     else
     {
-      out.Write("\tps.layer = eye;\n");
+      out.Write("\tps.layer = (xr_ortho != 0u) ? 2 : eye;\n");
     }
     if (!host_config.backend_gl_layer_in_fs)
-      out.Write("\tlayer = eye;\n");
+    {
+      out.Write("\tlayer = (xr_ortho != 0u) ? 2 : eye;\n");
+    }
   }
 
   if (api_type == APIType::OpenGL || api_type == APIType::Vulkan)
