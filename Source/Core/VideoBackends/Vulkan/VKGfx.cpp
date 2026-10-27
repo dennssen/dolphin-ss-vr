@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdio>
 #include <utility>
+#include <algorithm>
 
 #include "Common/CommonTypes.h"
 #include "Common/Logging/Log.h"
@@ -140,6 +141,13 @@ void VKGfx::ClearRegion(const MathUtil::Rectangle<int>& target_rc, bool color_en
   if (DriverDetails::HasBug(DriverDetails::BUG_BROKEN_CLEAR_LOADOP_RENDERPASS))
     use_clear_render_pass = false;
 
+  // XR: a clear render pass clears every layer, including the UI layer (2).
+  // Fall through to vkCmdClearAttachments, which is limited to layers 0 and 1 below.
+  if (g_framebuffer_manager->GetEFBLayers() >= 3)
+  {
+    use_clear_render_pass = false;
+  }
+
   auto* vk_frame_buffer = static_cast<VKFramebuffer*>(m_current_framebuffer);
 
   // Fastest path: Use a render pass to clear the buffers.
@@ -188,7 +196,7 @@ void VKGfx::ClearRegion(const MathUtil::Rectangle<int>& target_rc, bool color_en
     }
     if (!clear_attachments.empty())
     {
-      VkClearRect vk_rect = {target_vk_rc, 0, g_framebuffer_manager->GetEFBLayers()};
+      VkClearRect vk_rect = {target_vk_rc, 0, std::min(g_framebuffer_manager->GetEFBLayers(), 2u)};
       if (!StateTracker::GetInstance()->IsWithinRenderArea(
               target_vk_rc.offset.x, target_vk_rc.offset.y, target_vk_rc.extent.width,
               target_vk_rc.extent.height))
@@ -208,6 +216,38 @@ void VKGfx::ClearRegion(const MathUtil::Rectangle<int>& target_rc, bool color_en
     return;
 
   AbstractGfx::ClearRegion(target_rc, color_enable, alpha_enable, z_enable, color, z);
+}
+
+void VKGfx::ClearXRUILayer(AbstractTexture* color, AbstractTexture* depth)
+{
+  VKTexture* vk_color = static_cast<VKTexture*>(color);
+  VKTexture* vk_depth = static_cast<VKTexture*>(depth);
+  if (!vk_color || !vk_depth || vk_color->GetSamples() > 1) // MSVC:: MSAA not handled yet
+  {
+    return;
+  }
+
+  StateTracker::GetInstance()->EndRenderPass();
+  const VkCommandBuffer cmd = g_command_buffer_mgr->GetCurrentCommandBuffer();
+
+  const VkImageLayout old_color = vk_color->GetLayout();
+  const VkImageLayout old_depth = vk_depth->GetLayout();
+  vk_color->TransitionToLayout(cmd, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+  vk_depth->TransitionToLayout(cmd, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+
+  const VkClearColorValue clear_color = {{0.0f, 0.0f, 0.0f, 0.0f}};
+  const VkImageSubresourceRange color_range = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 2, 1};
+  vkCmdClearColorImage(cmd, vk_color->GetImage(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                       &clear_color, 1, &color_range);
+
+  const VkClearDepthStencilValue clear_depth = {
+      g_backend_info.bSupportsReversedDepthRange ? 1.0f : 0.0f, 0};
+  const VkImageSubresourceRange depth_range = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 2, 1};
+  vkCmdClearDepthStencilImage(cmd, vk_depth->GetImage(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                              &clear_depth, 1, &depth_range);
+
+  vk_color->TransitionToLayout(cmd, old_color);
+  vk_depth->TransitionToLayout(cmd, old_depth);
 }
 
 void VKGfx::Flush()

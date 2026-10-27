@@ -419,15 +419,6 @@ static void BPWritten(PixelShaderManager& pixel_shader_manager, XFStateManager& 
       const auto color_ar = bpmem.clearcolorAR;
       const auto color_gb = bpmem.clearcolorGB;
       const auto z_value = bpmem.clearZValue;
-      static int s_clear_log = 0;
-      if (s_clear_log++ % 300 == 0)
-      {
-        const PixelFormat xr_fmt = pixel_format;
-        const u32 xr_ar = color_ar;
-        const u32 xr_gb = color_gb;
-        INFO_LOG_FMT(VIDEO, "XR: clear color_en {} alpha_en {} z_en {} fmt {} ar {:08x} gb {:08x}",
-                     color_enable, alpha_enable, z_enable, static_cast<int>(xr_fmt), xr_ar, xr_gb);
-      }
       ClearScreen(g_framebuffer_manager.get(), srcRect, color_enable, alpha_enable, z_enable,
                   pixel_format, color_ar, color_gb, z_value);
 

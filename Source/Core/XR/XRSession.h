@@ -40,6 +40,8 @@ namespace XR
   uint64_t GetPoseGeneration();
   void LatchPose();
 
+  void SetCurrentDrawIsUi(bool is_ui);
+  bool CurrentDrawIsUi();
   bool IsUiDraw(bool is_ortho);
   void SetUIContentSize(uint32_t width, uint32_t height);
   void NoteCopy();

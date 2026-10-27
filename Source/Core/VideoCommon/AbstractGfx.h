@@ -88,6 +88,7 @@ public:
 
   virtual void ClearRegion(const MathUtil::Rectangle<int>& target_rc, bool colorEnable,
                            bool alphaEnable, bool zEnable, u32 color, u32 z);
+  virtual void ClearXRUILayer(AbstractTexture* color, AbstractTexture* depth) {}
 
   // Drawing with currently-bound pipeline state.
   virtual void Draw(u32 base_vertex, u32 num_vertices) {}

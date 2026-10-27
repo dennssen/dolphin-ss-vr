@@ -328,6 +328,22 @@ std::string GenerateTextureCopyPixelShader()
   return code.GetBuffer();
 }
 
+std::string GenerateXRUnpremultiplyPixelShader()
+{
+  ShaderCode code;
+  EmitSamplerDeclarations(code, 0, 1, false);
+  EmitPixelMainDeclaration(code, 1, 0);
+  code.Write("{{\n"
+             "  float4 c = ");
+  EmitSampleTexture(code, 0, "v_tex0");
+  code.Write(";\n"
+             "  float a = c.a;\n"
+             "  ocol0 = (a > 0.0) ? float4(min(c.rgb / a, float3(1.0, 1.0, 1.0)), a)\n"
+             "                    : float4(0.0, 0.0, 0.0, 0.0);\n"
+             "}}\n");
+  return code.GetBuffer();
+}
+
 std::string GenerateColorPixelShader()
 {
   ShaderCode code;

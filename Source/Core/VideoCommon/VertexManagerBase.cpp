@@ -636,6 +636,7 @@ void VertexManagerBase::Flush()
     if (!skip)
     {
       XR::NoteDrawTextures(xr_uses_efb_copy);
+      XR::SetCurrentDrawIsUi(XR::IsUiDraw(xfmem.projection.type != ProjectionType::Perspective));
       UpdatePipelineConfig();
       UpdatePipelineObject();
       if (m_current_pipeline_object)
@@ -840,12 +841,45 @@ void VertexManagerBase::UpdatePipelineConfig()
     }
   }
 
+  // XR: UI draws render into a premultiplied-alpha layer, so they need their own alpha blending
+  const bool xr_ui = XR::CurrentDrawIsUi();
+  static bool s_xr_last_ui = false;
+  if (xr_ui != s_xr_last_ui)
+  {
+    s_xr_last_ui = xr_ui;
+    m_blending_state_changed = true;
+  }
+
   if (m_blending_state_changed)
   {
     m_blending_state_changed = false;
 
     BlendingState new_bs = {};
     new_bs.Generate(bpmem);
+    if (xr_ui && !new_bs.logic_op_enable)
+    {
+      new_bs.alpha_update = new_bs.color_update;
+      if (new_bs.blend_enable && !new_bs.subtract)
+      {
+        switch (new_bs.dst_factor)
+        {
+        case DstBlendFactor::InvSrcAlpha:
+        case DstBlendFactor::InvSrcClr:
+          new_bs.src_factor_alpha = SrcBlendFactor::One;
+          new_bs.dst_factor_alpha = DstBlendFactor::InvSrcAlpha;
+          break;
+        case DstBlendFactor::Zero:
+          new_bs.src_factor_alpha = SrcBlendFactor::One;
+          new_bs.dst_factor_alpha = DstBlendFactor::Zero;
+          break;
+        default: // additive and anything else
+          new_bs.src_factor_alpha = SrcBlendFactor::Zero;
+          new_bs.dst_factor_alpha = DstBlendFactor::One;
+          break;
+        }
+      }
+    }
+
     if (new_bs != m_current_pipeline_config.blending_state)
     {
       m_current_pipeline_config.blending_state = new_bs;

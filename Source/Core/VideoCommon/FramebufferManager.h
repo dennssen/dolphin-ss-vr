@@ -99,7 +99,9 @@ public:
   // Resolve color/depth textures to a non-msaa texture, and return it.
   AbstractTexture* ResolveEFBColorTexture(const MathUtil::Rectangle<int>& region);
   void CaptureXRUILayer();
-  AbstractTexture* GetXRUITexture() const { return m_xr_ui_texture.get();  }
+  AbstractTexture* GetXRUITexture() const {
+    return m_xr_ui_straight_texture ? m_xr_ui_straight_texture.get() : m_xr_ui_texture.get();
+  }
   AbstractTexture* ResolveEFBDepthTexture(const MathUtil::Rectangle<int>& region,
                                           bool force_r32f = false);
 
@@ -199,6 +201,9 @@ protected:
   float m_efb_scale = 1.0f;
   PixelFormat m_prev_efb_format;
   std::unique_ptr<AbstractTexture> m_xr_ui_texture;
+  std::unique_ptr<AbstractTexture> m_xr_ui_straight_texture;
+  std::unique_ptr<AbstractFramebuffer> m_xr_ui_straight_framebuffer;
+  std::unique_ptr<AbstractPipeline> m_xr_unpremultiply_pipeline;
 
   std::unique_ptr<AbstractTexture> m_efb_color_texture;
   std::unique_ptr<AbstractTexture> m_efb_convert_color_texture;

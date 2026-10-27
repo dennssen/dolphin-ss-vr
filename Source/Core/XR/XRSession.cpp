@@ -41,6 +41,7 @@ namespace
   uint32_t s_ui_content_h = 0;
   XrSpace s_space = XR_NULL_HANDLE;
   std::atomic<uint64_t> s_pose_generation{0};
+  bool s_current_draw_is_ui = false;
   bool s_draw_uses_efb_copy = false;
   bool s_seen_perspective = false;
   bool s_prev_frame_had_perspective = false;
@@ -514,19 +515,6 @@ namespace XR
                           (views[0].pose.position.z + views[1].pose.position.z) * 0.5f};
         s_have_ref = true;
       }
-
-      static int s_view_frames = 0;
-      if (s_view_frames++ % 120 == 0)
-      {
-        const XrPosef& p = s_latest.pose[0];
-        INFO_LOG_FMT(VIDEO,
-                    "XR: eye0 pos {:.3f} {:.3f} {:.3f} quat {:.3f} {:.3f} {:.3f} {:.3f} fov "
-                    "{:.2f} {:.2f} {:.2f} {:.2f}",
-                    p.position.x, p.position.y, p.position.z, p.orientation.x, p.orientation.y,
-                    p.orientation.z, p.orientation.w, s_latest.fov[0].angleLeft,
-                    s_latest.fov[0].angleRight, s_latest.fov[0].angleUp,
-                    s_latest.fov[0].angleDown);
-      }
     }
 
     if (!s_frame_state.shouldRender)
@@ -681,7 +669,8 @@ namespace XR
       xrReleaseSwapchainImage(s_ui_swapchain, &ui_release);
       s_ui_acquired = false;
 
-      quad.layerFlags = 0;  // opaque for now; alpha blending comes with the clear-alpha step
+      quad.layerFlags = XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT |
+                        XR_COMPOSITION_LAYER_UNPREMULTIPLIED_ALPHA_BIT;
       quad.space = s_space;
       quad.eyeVisibility = XR_EYE_VISIBILITY_BOTH;
       quad.subImage.swapchain = s_ui_swapchain;
@@ -850,6 +839,16 @@ namespace XR
     s_pose_generation++;
   }
 
+  void SetCurrentDrawIsUi(bool is_ui)
+  {
+    s_current_draw_is_ui = is_ui;
+  }
+
+  bool CurrentDrawIsUi()
+  {
+    return s_current_draw_is_ui;
+  }
+
   bool IsUiDraw(bool is_ortho)
   {
     if (!is_ortho)
@@ -916,7 +915,7 @@ namespace XR
     static std::string s_last_2d;
     if (s_trace.find('P') != std::string::npos)
     {
-      if ((s_3d_frames++ % 30) == 0)
+      if ((s_3d_frames++ % 300) == 0)
         INFO_LOG_FMT(VIDEO, "XR: pass trace {}", s_trace);
     }
     else if (s_trace != s_last_2d)

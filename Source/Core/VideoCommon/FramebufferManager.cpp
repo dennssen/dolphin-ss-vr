@@ -271,6 +271,20 @@ bool FramebufferManager::CreateEFBFramebuffer(int efb_scale)
     {
       return false;
     }
+
+    m_xr_ui_straight_texture = g_gfx->CreateTexture(
+        TextureConfig(width, height, 1, 1, 1, efb_color_texture_config.format,
+                      AbstractTextureFlag_RenderTarget, AbstractTextureType::Texture_2DArray),
+        "XR UI straight texture");
+    if (m_xr_ui_straight_texture)
+    {
+      m_xr_ui_straight_framebuffer =
+          g_gfx->CreateFramebuffer(m_xr_ui_straight_texture.get(), nullptr);
+    }
+    if (!m_xr_ui_straight_texture || !m_xr_ui_straight_framebuffer)
+    {
+      return false;
+    }
   }
 
   // Create resolved textures if MSAA is on
@@ -334,6 +348,8 @@ void FramebufferManager::DestroyEFBFramebuffer()
   m_efb_depth_resolve_framebuffer.reset();
   m_efb_depth_resolve_texture.reset();
   m_xr_ui_texture.reset();
+  m_xr_ui_straight_framebuffer.reset();
+  m_xr_ui_straight_texture.reset();
 }
 
 void FramebufferManager::BindEFBFramebuffer()
@@ -389,6 +405,22 @@ void FramebufferManager::CaptureXRUILayer()
   m_xr_ui_texture->CopyRectangleFromTexture(src, rect, 2, 0, rect, 0, 0);
   m_xr_ui_texture->FinishedRendering();
 
+  // XR: the runtime wants straight (unpremultiplied) alpha, so divide the colour by alpha.
+  if (m_xr_unpremultiply_pipeline && m_xr_ui_straight_framebuffer)
+  {
+    g_gfx->BeginUtilityDrawing();
+    g_gfx->SetAndDiscardFramebuffer(m_xr_ui_straight_framebuffer.get());
+    g_gfx->SetPipeline(m_xr_unpremultiply_pipeline.get());
+    g_gfx->SetTexture(0, m_xr_ui_texture.get());
+    g_gfx->SetSamplerState(0, RenderState::GetPointSamplerState());
+    g_gfx->SetViewportAndScissor(rect);
+    g_gfx->Draw(0, 3);
+    m_xr_ui_straight_texture->FinishedRendering();
+    g_gfx->EndUtilityDrawing();
+  }
+
+  g_gfx->ClearXRUILayer(m_efb_color_texture.get(), m_efb_depth_texture.get());
+
   static bool logged = false;
   if (!logged)
   {
@@ -429,6 +461,17 @@ bool FramebufferManager::ReinterpretPixelData(EFBReinterpretType convtype)
 {
   if (!m_format_conversion_pipelines[static_cast<u32>(convtype)])
     return false;
+
+  if (GetEFBLayers() >= 3)
+  {
+    // XR: the conversion draw only covers layers 0 and 1, so carry the UI layer across first.
+    // The copy leaves the destination in a shader-read layout; SetFramebuffer() below
+    // transitions it back to the attachment layout.
+    const MathUtil::Rectangle<int> xr_rect(0, 0, GetEFBWidth(), GetEFBHeight());
+    m_efb_convert_color_texture->CopyRectangleFromTexture(m_efb_color_texture.get(), xr_rect, 2, 0,
+                                                          xr_rect, 2, 0);
+    m_efb_convert_color_texture->FinishedRendering();
+  }
 
   // Draw to the secondary framebuffer.
   // We don't discard here because discarding the framebuffer also throws away the depth
@@ -730,6 +773,30 @@ bool FramebufferManager::CompileReadbackPipelines()
   m_efb_restore_pipeline = g_gfx->CreatePipeline(config);
   if (!m_efb_restore_pipeline)
     return false;
+
+  if (m_xr_ui_straight_texture)
+  {
+    auto unpremultiply_shader = g_gfx->CreateShaderFromSource(
+        ShaderStage::Pixel, FramebufferShaderGen::GenerateXRUnpremultiplyPixelShader(), nullptr,
+        "XR unpremultiply pixel shader");
+    if (!unpremultiply_shader)
+      return false;
+
+    AbstractPipelineConfig xr_config = {};
+    xr_config.vertex_shader = g_shader_cache->GetScreenQuadVertexShader();
+    xr_config.geometry_shader = nullptr;
+    xr_config.pixel_shader = unpremultiply_shader.get();
+    xr_config.rasterization_state =
+        RenderState::GetNoCullRasterizationState(PrimitiveType::Triangles);
+    xr_config.depth_state = RenderState::GetNoDepthTestingDepthState();
+    xr_config.blending_state = RenderState::GetNoBlendingBlendState();
+    xr_config.framebuffer_state = RenderState::GetColorFramebufferState(GetEFBColorFormat());
+    xr_config.usage = AbstractPipelineUsage::Utility;
+    m_xr_unpremultiply_pipeline = g_gfx->CreatePipeline(xr_config);
+    if (!m_xr_unpremultiply_pipeline)
+      return false;
+    INFO_LOG_FMT(VIDEO, "XR: unpremultiply pipeline created");
+  }
 
   return true;
 }
