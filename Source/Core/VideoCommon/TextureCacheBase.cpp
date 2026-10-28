@@ -59,6 +59,8 @@
 #include "VideoCommon/VideoCommon.h"
 #include "VideoCommon/VideoConfig.h"
 
+#include "XR/XRSession.h"
+
 static const u64 TEXHASH_INVALID = 0;
 // Sonic the Fighters (inside Sonic Gems Collection) loops a 64 frames animation
 static const int TEXTURE_KILL_THRESHOLD = 64;
@@ -3270,6 +3272,8 @@ RcTcacheEntry TextureCacheBase::SetupCopyEntry(FramebufferManager* frame_buffer_
     else
     {
       entry->SetEfbCopy(resolved_data.source_data.dest_stride);
+      entry->xr_ui_content = XR::TakeCopyContentIsUi();
+      XR::TraceEvent(entry->xr_ui_content ? 'K' : 'k');
     }
     entry->may_have_overlapping_textures = false;
     entry->is_custom_tex = false;

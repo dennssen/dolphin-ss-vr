@@ -42,6 +42,9 @@ namespace
   XrSpace s_space = XR_NULL_HANDLE;
   std::atomic<uint64_t> s_pose_generation{0};
   bool s_current_draw_is_ui = false;
+  bool s_draw_copy_is_ui = false;
+  uint32_t s_copy_ui_draws = 0;
+  uint32_t s_copy_eye_draws = 0;
   bool s_draw_uses_efb_copy = false;
   bool s_seen_perspective = false;
   bool s_prev_frame_had_perspective = false;
@@ -669,8 +672,7 @@ namespace XR
       xrReleaseSwapchainImage(s_ui_swapchain, &ui_release);
       s_ui_acquired = false;
 
-      quad.layerFlags = XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT |
-                        XR_COMPOSITION_LAYER_UNPREMULTIPLIED_ALPHA_BIT;
+      quad.layerFlags = XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT | XR_COMPOSITION_LAYER_UNPREMULTIPLIED_ALPHA_BIT;
       quad.space = s_space;
       quad.eyeVisibility = XR_EYE_VISIBILITY_BOTH;
       quad.subImage.swapchain = s_ui_swapchain;
@@ -842,6 +844,7 @@ namespace XR
   void SetCurrentDrawIsUi(bool is_ui)
   {
     s_current_draw_is_ui = is_ui;
+    if (is_ui) s_copy_ui_draws++; else s_copy_eye_draws++;
   }
 
   bool CurrentDrawIsUi()
@@ -856,7 +859,7 @@ namespace XR
       s_seen_perspective = true;
       return false;
     }
-    if (s_draw_uses_efb_copy)
+    if (s_draw_uses_efb_copy && !s_draw_copy_is_ui)
     {
       return false;
     }
@@ -875,16 +878,24 @@ namespace XR
     s_ui_start_next = s_draw_index;
   }
 
-  void NoteDrawTextures(bool uses_efb_copy)
-  {
-    s_draw_uses_efb_copy = uses_efb_copy;
-  }
+   void NoteDrawTextures(bool uses_efb_copy, bool copy_is_ui)
+   {
+     s_draw_uses_efb_copy = uses_efb_copy;
+     s_draw_copy_is_ui = copy_is_ui;
+   }
+
+   bool TakeCopyContentIsUi()
+   {
+     return s_copy_ui_draws > 0 && s_copy_eye_draws == 0;
+   }
 
   void EndFrameStructure()
   {
     s_prev_frame_had_perspective = s_seen_perspective;
     s_seen_perspective = false;
     s_draw_index = 0;
+    s_copy_ui_draws = 0;
+    s_copy_eye_draws = 0;
   }
 
   void TraceEvent(char c)

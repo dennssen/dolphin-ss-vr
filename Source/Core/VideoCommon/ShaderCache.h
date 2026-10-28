@@ -203,6 +203,7 @@ private:
   std::unique_ptr<AbstractShader> m_efb_copy_vertex_shader;
   std::unique_ptr<AbstractShader> m_texcoord_geometry_shader;
   std::unique_ptr<AbstractShader> m_color_geometry_shader;
+  std::unique_ptr<AbstractShader> m_efb_copy_geometry_shader;
   std::unique_ptr<AbstractShader> m_texture_copy_pixel_shader;
   std::unique_ptr<AbstractShader> m_color_pixel_shader;
 

@@ -197,7 +197,7 @@ std::string GenerateScreenQuadVertexShader()
   return code.GetBuffer();
 }
 
-std::string GeneratePassthroughGeometryShader(u32 num_tex, u32 num_colors)
+std::string GeneratePassthroughGeometryShader(u32 num_tex, u32 num_colors, u32 num_layers)
 {
   ShaderCode code;
   if (GetAPIType() == APIType::D3D)
@@ -244,7 +244,7 @@ std::string GeneratePassthroughGeometryShader(u32 num_tex, u32 num_colors)
   else if (GetAPIType() == APIType::OpenGL || GetAPIType() == APIType::Vulkan)
   {
     code.Write("layout(triangles) in;\n"
-               "layout(triangle_strip, max_vertices = 6) out;\n");
+               "layout(triangle_strip, max_vertices = {}) out;\n", num_layers * 3);
 
     if (num_tex > 0 || num_colors > 0)
     {
@@ -265,9 +265,9 @@ std::string GeneratePassthroughGeometryShader(u32 num_tex, u32 num_colors)
     code.Write("\n"
                "void main()\n"
                "{{\n"
-               "  for (int j = 0; j < 2; j++)\n"
+               "  for (int j = 0; j < {}; j++)\n"
                "  {{\n"
-               "    gl_Layer = j;\n");
+               "    gl_Layer = j;\n", num_layers);
 
     // We have to explicitly unroll this loop otherwise the GL compiler gets cranky.
     for (u32 v = 0; v < 3; v++)

@@ -403,6 +403,7 @@ void ShaderCache::ClearCaches()
   m_efb_copy_vertex_shader.reset();
   m_texcoord_geometry_shader.reset();
   m_color_geometry_shader.reset();
+  m_efb_copy_geometry_shader.reset();
   m_texture_copy_pixel_shader.reset();
   m_color_pixel_shader.reset();
 
@@ -1280,7 +1281,7 @@ ShaderCache::GetEFBCopyToVRAMPipeline(const TextureConversionShaderGen::TCShader
   config.vertex_format = nullptr;
   config.vertex_shader = m_efb_copy_vertex_shader.get();
   config.geometry_shader =
-      UseGeometryShaderForEFBCopies() ? m_texcoord_geometry_shader.get() : nullptr;
+      UseGeometryShaderForEFBCopies() ? m_efb_copy_geometry_shader.get() : nullptr;
   config.pixel_shader = shader.get();
   config.rasterization_state = RenderState::GetNoCullRasterizationState(PrimitiveType::Triangles);
   config.depth_state = RenderState::GetNoDepthTestingDepthState();
@@ -1342,7 +1343,10 @@ bool ShaderCache::CompileSharedPipelines()
     m_color_geometry_shader = g_gfx->CreateShaderFromSource(
         ShaderStage::Geometry, FramebufferShaderGen::GeneratePassthroughGeometryShader(0, 1),
         nullptr, "Color passthrough geometry shader");
-    if (!m_texcoord_geometry_shader || !m_color_geometry_shader)
+    m_efb_copy_geometry_shader = g_gfx->CreateShaderFromSource(
+         ShaderStage::Geometry, FramebufferShaderGen::GeneratePassthroughGeometryShader(1, 0, 3),
+         nullptr, "EFB copy passthrough geometry shader");
+    if (!m_texcoord_geometry_shader || !m_color_geometry_shader || !m_efb_copy_geometry_shader)
       return false;
   }
 

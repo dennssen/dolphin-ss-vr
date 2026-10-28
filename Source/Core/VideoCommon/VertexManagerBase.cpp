@@ -563,6 +563,7 @@ void VertexManagerBase::Flush()
   Common::SmallVector<u32, 8> texture_units;
   std::array<SamplerState, 8> samplers;
   bool xr_uses_efb_copy = false;
+  bool xr_copies_all_ui = true;
   if (!m_cull_all)
   {
     if (!g_ActiveConfig.bGraphicMods)
@@ -573,7 +574,11 @@ void VertexManagerBase::Flush()
         if (!cache_entry)
           continue;
         if (cache_entry->IsEfbCopy())
+        {
           xr_uses_efb_copy = true;
+          if (!cache_entry->xr_ui_content)
+            xr_copies_all_ui = false;
+        }
         const float custom_tex_scale = cache_entry->GetWidth() / float(cache_entry->native_width);
         samplers[i] = TextureCacheBase::GetSamplerState(
             i, custom_tex_scale, cache_entry->is_custom_tex, cache_entry->has_arbitrary_mips);
@@ -635,7 +640,7 @@ void VertexManagerBase::Flush()
 
     if (!skip)
     {
-      XR::NoteDrawTextures(xr_uses_efb_copy);
+      XR::NoteDrawTextures(xr_uses_efb_copy, xr_copies_all_ui);
       XR::SetCurrentDrawIsUi(XR::IsUiDraw(xfmem.projection.type != ProjectionType::Perspective));
       UpdatePipelineConfig();
       UpdatePipelineObject();

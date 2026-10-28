@@ -48,6 +48,7 @@ namespace XR
   void EndFrameStructure();
 
   void TraceEvent(char c);
-  void NoteDrawTextures(bool uses_efb_copy);
+  void NoteDrawTextures(bool uses_efb_copy, bool copy_is_ui);
+  bool TakeCopyContentIsUi();
   void FlushTrace();
 }
