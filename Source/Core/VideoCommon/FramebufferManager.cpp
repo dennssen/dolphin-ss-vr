@@ -402,15 +402,18 @@ void FramebufferManager::CaptureXRUILayer()
 
   const MathUtil::Rectangle<int> rect(0, 0, GetEFBWidth(), GetEFBHeight());
   AbstractTexture* src = ResolveEFBColorTexture(rect);
-  m_xr_ui_texture->CopyRectangleFromTexture(src, rect, 2, 0, rect, 0, 0);
+  const bool flat_frame = XR::LastFrameWas2D();
+  m_xr_ui_texture->CopyRectangleFromTexture(src, rect, flat_frame ? 0 : 2, 0, rect, 0, 0);
   m_xr_ui_texture->FinishedRendering();
 
   // XR: the runtime wants straight (unpremultiplied) alpha, so divide the colour by alpha.
-  if (m_xr_unpremultiply_pipeline && m_xr_ui_straight_framebuffer)
+  AbstractPipeline* xr_pipeline =
+      flat_frame ? m_xr_opaque_pipeline.get() : m_xr_unpremultiply_pipeline.get();
+  if (xr_pipeline && m_xr_ui_straight_framebuffer)
   {
     g_gfx->BeginUtilityDrawing();
     g_gfx->SetAndDiscardFramebuffer(m_xr_ui_straight_framebuffer.get());
-    g_gfx->SetPipeline(m_xr_unpremultiply_pipeline.get());
+    g_gfx->SetPipeline(xr_pipeline);
     g_gfx->SetTexture(0, m_xr_ui_texture.get());
     g_gfx->SetSamplerState(0, RenderState::GetPointSamplerState());
     g_gfx->SetViewportAndScissor(rect);
@@ -796,6 +799,15 @@ bool FramebufferManager::CompileReadbackPipelines()
     if (!m_xr_unpremultiply_pipeline)
       return false;
     INFO_LOG_FMT(VIDEO, "XR: unpremultiply pipeline created");
+    auto opaque_shader = g_gfx->CreateShaderFromSource(
+        ShaderStage::Pixel, FramebufferShaderGen::GenerateXROpaquePixelShader(), nullptr,
+        "XR opaque pixel shader");
+    if (!opaque_shader)
+      return false;
+    xr_config.pixel_shader = opaque_shader.get();
+    m_xr_opaque_pipeline = g_gfx->CreatePipeline(xr_config);
+    if (!m_xr_opaque_pipeline)
+      return false;
   }
 
   return true;

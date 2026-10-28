@@ -204,6 +204,7 @@ protected:
   std::unique_ptr<AbstractTexture> m_xr_ui_straight_texture;
   std::unique_ptr<AbstractFramebuffer> m_xr_ui_straight_framebuffer;
   std::unique_ptr<AbstractPipeline> m_xr_unpremultiply_pipeline;
+  std::unique_ptr<AbstractPipeline> m_xr_opaque_pipeline;
 
   std::unique_ptr<AbstractTexture> m_efb_color_texture;
   std::unique_ptr<AbstractTexture> m_efb_convert_color_texture;

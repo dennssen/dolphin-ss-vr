@@ -61,6 +61,7 @@ struct alignas(16) PixelShaderConstants
   LogicOp logic_op_mode;
   // For custom shaders...
   u32 time_ms;
+  s32 xr_tex_layer = -1; // XR: texture array layer to sample, -1 means the fragment's own layer
 };
 
 struct alignas(16) VertexShaderConstants

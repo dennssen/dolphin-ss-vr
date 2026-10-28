@@ -344,6 +344,20 @@ std::string GenerateXRUnpremultiplyPixelShader()
   return code.GetBuffer();
 }
 
+std::string GenerateXROpaquePixelShader()
+{
+  ShaderCode code;
+  EmitSamplerDeclarations(code, 0, 1, false);
+  EmitPixelMainDeclaration(code, 1, 0);
+  code.Write("{{\n"
+             "  float4 c = ");
+  EmitSampleTexture(code, 0, "v_tex0");
+  code.Write(";\n"
+             "  ocol0 = float4(c.rgb, 1.0);\n"
+             "}}\n");
+  return code.GetBuffer();
+}
+
 std::string GenerateColorPixelShader()
 {
   ShaderCode code;

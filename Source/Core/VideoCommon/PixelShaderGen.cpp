@@ -382,6 +382,7 @@ void WritePixelShaderCommonHeader(ShaderCode& out, APIType api_type,
             "\tbool  logic_op_enable;\n"
             "\tuint  logic_op_mode;\n"
             "\tuint  time_ms;\n"
+            "\tint   xr_tex_layer;\n"
             "}};\n\n");
   out.Write("#define bpmem_combiners(i) (bpmem_pack1[(i)].xy)\n"
             "#define bpmem_tevind(i) (bpmem_pack1[(i)].z)\n"
@@ -1924,7 +1925,7 @@ void WriteFragmentBody(APIType api_type, const ShaderHostConfig& host_config,
 
   out.Write("\tvec4 col0 = frag_input.color_0;\n");
   out.Write("\tvec4 col1 = frag_input.color_1;\n");
-  out.Write("\tint layer = frag_input.layer;\n");
+  out.Write("\tint layer = (xr_tex_layer >= 0) ? xr_tex_layer : frag_input.layer;\n");
 
   out.Write("\tint4 c0 = " I_COLORS "[1], c1 = " I_COLORS "[2], c2 = " I_COLORS
             "[3], prev = " I_COLORS "[0];\n"

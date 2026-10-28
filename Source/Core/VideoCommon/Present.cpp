@@ -24,6 +24,8 @@
 #include "VideoCommon/VideoEvents.h"
 #include "VideoCommon/Widescreen.h"
 
+#include "XR/XRSession.h"
+
 std::unique_ptr<VideoCommon::Presenter> g_presenter;
 
 namespace VideoCommon
@@ -952,6 +954,16 @@ void Presenter::Present(PresentInfo* present_info)
     m_onscreen_ui->Finalize();
     if (backbuffer_bound)
       m_onscreen_ui->DrawImGui();
+  }
+
+  {
+    const bool presented_2d = m_xfb_entry && m_xfb_entry->xr_frame_is_2d;
+    if (presented_2d != XR::LastFrameWas2D())
+    {
+      INFO_LOG_FMT(VIDEO, "XR: presenting a {} XFB while the newest frame is {}",
+                   presented_2d ? "2D" : "3D", XR::LastFrameWas2D() ? "2D" : "3D");
+    }
+    XR::SetPresentedFrameIs2D(presented_2d);
   }
 
   // Present to the window system.
