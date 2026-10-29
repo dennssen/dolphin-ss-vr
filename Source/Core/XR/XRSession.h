@@ -45,6 +45,8 @@ namespace XR
   int CurrentDrawTexLayer();
   bool IsUiDraw(bool is_ortho);
   void SetUIContentSize(uint32_t width, uint32_t height);
+  // The part of the UI texture that holds content, as fractions (0..1) of its size.
+  bool GetUIContentFraction(float* out_u, float* out_v);
   void EndFrameStructure();
   uint64_t FrameNo();
   bool LastFrameWas2D();

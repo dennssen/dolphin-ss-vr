@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cstring>
 #include <string>
+#include <array>
 
 #include <fmt/format.h>
 
@@ -347,7 +348,20 @@ static void BPWritten(PixelShaderManager& pixel_shader_manager, XFStateManager& 
         float num_xfb_lines = 1.0f + bpmem.copyTexSrcWH.y * yScale;
 
         u32 height = static_cast<u32>(num_xfb_lines);
-        XR::SetUIContentSize(srcRect.GetWidth(), height);
+        const u32 ui_scale = g_framebuffer_manager->GetXRUIScale();
+        XR::SetUIContentSize(static_cast<u32>(srcRect.GetWidth()) * ui_scale, static_cast<u32>(srcRect.GetHeight()) * ui_scale);
+
+        {
+          static std::array<s32, 6> s_last_ui_log{};
+          const std::array<s32, 6> now{srcRect.left, srcRect.top, srcRect.right, srcRect.bottom,
+                                       static_cast<s32>(height), XR::LastFrameWas2D() ? 1 : 0};
+          if (now != s_last_ui_log)
+          {
+            s_last_ui_log = now;
+            INFO_LOG_FMT(VIDEO, "XR UI: XFB srcRect l{} t{} r{} b{} height {} last2D {} ui_scale {}",
+                         now[0], now[1], now[2], now[3], now[4], now[5], ui_scale);
+          }
+        }
 
         static int s_xfb_log = 0;
         if (s_xfb_log++ % 300 == 0)

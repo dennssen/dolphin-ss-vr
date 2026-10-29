@@ -263,6 +263,10 @@ bool FramebufferManager::CreateEFBFramebuffer(int efb_scale)
 
   if (efb_color_texture_config.layers >= 3)
   {
+    // The UI qud doesn't need the EFB's resolution. Cap it at 2x native.
+    m_xr_ui_scale = std::min<u32>(m_efb_scale, 2);
+    const u32 ui_width = EFB_WIDTH * m_xr_ui_scale;
+    const u32 ui_height = EFB_HEIGHT * m_xr_ui_scale;
     m_xr_ui_texture =
         g_gfx->CreateTexture(TextureConfig(width, height, 1, 1, 1, efb_color_texture_config.format,
                                            0, AbstractTextureType::Texture_2DArray),
@@ -273,7 +277,7 @@ bool FramebufferManager::CreateEFBFramebuffer(int efb_scale)
     }
 
     m_xr_ui_straight_texture = g_gfx->CreateTexture(
-        TextureConfig(width, height, 1, 1, 1, efb_color_texture_config.format,
+        TextureConfig(ui_width, ui_height, 1, 1, 1, efb_color_texture_config.format,
                       AbstractTextureFlag_RenderTarget, AbstractTextureType::Texture_2DArray),
         "XR UI straight texture");
     if (m_xr_ui_straight_texture)
@@ -415,21 +419,16 @@ void FramebufferManager::CaptureXRUILayer()
     g_gfx->SetAndDiscardFramebuffer(m_xr_ui_straight_framebuffer.get());
     g_gfx->SetPipeline(xr_pipeline);
     g_gfx->SetTexture(0, m_xr_ui_texture.get());
-    g_gfx->SetSamplerState(0, RenderState::GetPointSamplerState());
-    g_gfx->SetViewportAndScissor(rect);
+    g_gfx->SetSamplerState(0, RenderState::GetLinearSamplerState());
+    g_gfx->SetViewportAndScissor(
+      MathUtil::Rectangle<int>(0, 0, static_cast<int>(m_xr_ui_straight_texture->GetWidth()), static_cast<int>(m_xr_ui_straight_texture->GetHeight()))
+    );
     g_gfx->Draw(0, 3);
     m_xr_ui_straight_texture->FinishedRendering();
     g_gfx->EndUtilityDrawing();
   }
 
   g_gfx->ClearXRUILayer(m_efb_color_texture.get(), m_efb_depth_texture.get());
-
-  static bool logged = false;
-  if (!logged)
-  {
-    logged = true;
-    INFO_LOG_FMT(VIDEO, "XR: UI layer captured ({}x{})", GetEFBWidth(), GetEFBHeight());
-  }
 }
 
 AbstractTexture* FramebufferManager::ResolveEFBDepthTexture(const MathUtil::Rectangle<int>& region,

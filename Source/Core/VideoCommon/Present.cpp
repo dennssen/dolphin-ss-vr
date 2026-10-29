@@ -1,6 +1,9 @@
 // Copyright 2023 Dolphin Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <array>
+#include <imgui.h>
+
 #include "VideoCommon/Present.h"
 
 #include "Common/ChunkFile.h"
@@ -905,6 +908,42 @@ void Presenter::RenderXFBToScreen(const MathUtil::Rectangle<int>& target_rc,
   }
 }
 
+void Presenter::RenderXRTarget()
+{
+  const u32 w = XR::GetSwapchainWidth();
+  const u32 h = XR::GetSwapchainHeight();
+  if (!XR::IsActive() || w == 0 || h == 0 || !m_xfb_entry)
+    return;
+
+  if (!m_xr_present_texture || m_xr_present_texture->GetWidth() != w || m_xr_present_texture->GetHeight() != h)
+  {
+    m_xr_present_framebuffer.reset();
+    // Same format as the backbuffer, so the post-processor pipeline is reused as is.
+    m_xr_present_texture = g_gfx->CreateTexture(TextureConfig(w, h, 1, 1, 1, m_backbuffer_format,
+                                                              AbstractTextureFlag_RenderTarget,
+                                                              AbstractTextureType::Texture_2DArray),
+                                                "XR present target");
+    if (m_xr_present_texture)
+      m_xr_present_framebuffer = g_gfx->CreateFramebuffer(m_xr_present_texture.get(), nullptr);
+    if (!m_xr_present_framebuffer)
+    {
+      m_xr_present_texture.reset();
+      return;
+    }
+  }
+
+  g_gfx->SetAndClearFramebuffer(m_xr_present_framebuffer.get(), {{0.0f, 0.0f, 0.0f, 1.0f}});
+
+  // Each eye fills its half completely: no aspect fitting, no letterboxing.
+  const int half = static_cast<int>(w / 2);
+  const MathUtil::Rectangle<int> left_rc(0, 0, half, static_cast<int>(h));
+  const MathUtil::Rectangle<int> right_rc(half, 0, static_cast<int>(w), static_cast<int>(h));
+  const MathUtil::Rectangle<int> source_rc = AdjustForCustomCrop(m_xfb_rect);
+  m_post_processor->BlitFromTexture(left_rc, source_rc, m_xfb_entry->texture.get(), 0);
+  m_post_processor->BlitFromTexture(right_rc, source_rc, m_xfb_entry->texture.get(), 1);
+  m_xr_present_texture->FinishedRendering();
+}
+
 void Presenter::Present(PresentInfo* present_info)
 {
   m_present_count++;
@@ -936,17 +975,67 @@ void Presenter::Present(PresentInfo* present_info)
   UpdateDrawRectangle();
 
   g_gfx->BeginUtilityDrawing();
+  RenderXRTarget();
   const bool backbuffer_bound = g_gfx->BindBackbuffer({{0.0f, 0.0f, 0.0f, 1.0f}});
 
   // Render the XFB to the screen.
   if (backbuffer_bound && m_xfb_entry)
   {
-    // Adjust the source rectangle instead of using an oversized viewport to render the XFB.
-    MathUtil::Rectangle<int> render_target_rc = GetTargetRectangle();
-    MathUtil::Rectangle<int> render_source_rc = AdjustForCustomCrop(m_xfb_rect);
-    AdjustRectanglesToFitBounds(&render_target_rc, &render_source_rc, m_backbuffer_width,
-                                m_backbuffer_height);
-    RenderXFBToScreen(render_target_rc, m_xfb_entry->texture.get(), render_source_rc);
+    if (m_xr_present_texture && XR::IsActive())
+    {
+      constexpr int kMirrorEye = 1;  // 0 = left, 1 = right
+      constexpr float kMirrorAspect = 16.0f / 9.0f;
+      const int eye_w = static_cast<int>(m_xr_present_texture->GetWidth() / 2);
+      const int eye_h = static_cast<int>(m_xr_present_texture->GetHeight());
+
+      // Centre-crop the eye image to 16:9.
+      int src_w = eye_w;
+      int src_h = eye_h;
+      if (static_cast<float>(eye_w) / static_cast<float>(eye_h) > kMirrorAspect)
+        src_w = static_cast<int>(static_cast<float>(eye_h) * kMirrorAspect);
+      else
+        src_h = static_cast<int>(static_cast<float>(eye_w) / kMirrorAspect);
+      const int src_l_in_eye = (eye_w - src_w) / 2;
+      const int src_t = (eye_h - src_h) / 2;
+      const int src_l = kMirrorEye * eye_w + src_l_in_eye;
+      const MathUtil::Rectangle<int> eye_src(src_l, src_t, src_l + src_w, src_t + src_h);
+
+      // Fit that 16:9 picture into the window.
+      int mw = m_backbuffer_width;
+      int mh = m_backbuffer_height;
+      if (static_cast<float>(mw) / static_cast<float>(mh) > kMirrorAspect)
+        mw = static_cast<int>(static_cast<float>(mh) * kMirrorAspect);
+      else
+        mh = static_cast<int>(static_cast<float>(mw) / kMirrorAspect);
+      const int ml = (m_backbuffer_width - mw) / 2;
+      const int mt = (m_backbuffer_height - mh) / 2;
+      const MathUtil::Rectangle<int> mirror_rc(ml, mt, ml + mw, mt + mh);
+
+      // The headset shows no world layer on a 2D frame, only the quad on black.
+      if (!m_xfb_entry->xr_frame_is_2d)
+        m_post_processor->BlitFromTexture(mirror_rc, eye_src, m_xr_present_texture.get(), 0);
+
+      // HUD and 2D screens as a flat overlay over the whole mirror, like stock Dolphin.
+      AbstractTexture* ui_tex = g_framebuffer_manager->GetXRUITexture();
+      float ui_u, ui_v;
+      if (ui_tex && XR::GetUIContentFraction(&ui_u, &ui_v))
+      {
+        ImGui::GetBackgroundDrawList()->AddImage(
+            reinterpret_cast<ImTextureID>(ui_tex),
+            ImVec2(static_cast<float>(ml), static_cast<float>(mt)),
+            ImVec2(static_cast<float>(ml + mw), static_cast<float>(mt + mh)),
+            ImVec2(0.0f, 0.0f), ImVec2(ui_u, ui_v));
+      }
+    }
+    else
+    {
+      // Adjust the source rectangle instead of using an oversized viewport to render the XFB.
+      MathUtil::Rectangle<int> render_target_rc = GetTargetRectangle();
+      MathUtil::Rectangle<int> render_source_rc = AdjustForCustomCrop(m_xfb_rect);
+      AdjustRectanglesToFitBounds(&render_target_rc, &render_source_rc, m_backbuffer_width,
+                                  m_backbuffer_height);
+      RenderXFBToScreen(render_target_rc, m_xfb_entry->texture.get(), render_source_rc);
+    }
   }
 
   if (m_onscreen_ui)

@@ -874,10 +874,24 @@ namespace XR
     return s_current_tex_layer;
   }
 
-    void SetUIContentSize(uint32_t width, uint32_t height)
+  void SetUIContentSize(uint32_t width, uint32_t height)
   {
     s_ui_content_w = width;
     s_ui_content_h = height;
+  }
+
+  bool GetUIContentFraction(float* out_u, float* out_v){
+    if (s_ui_width == 0 || s_ui_height == 0)
+    {
+      return false;
+    }
+
+    // Same crop as in EndFrame.
+    const uint32_t crop_w = (s_ui_content_w > 0) ? std::min(s_ui_content_w, s_ui_width) : s_ui_width;
+    const uint32_t crop_h = (s_ui_content_h > 0) ? std::min(s_ui_content_h, s_ui_height) : s_ui_height;
+    *out_u = static_cast<float>(crop_w) / static_cast<float>(s_ui_width);
+    *out_v = static_cast<float>(crop_h) / static_cast<float>(s_ui_height);
+    return true;
   }
 
   void NoteDrawTextures(bool uses_efb_copy, bool copies_all_flat, bool copies_all_old)

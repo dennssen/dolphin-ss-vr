@@ -433,10 +433,12 @@ void VKGfx::PresentBackbuffer()
   {
     if (xr_rendering)
     {
-      VKTexture* backbuffer = m_swap_chain->GetCurrentTexture();
+      VKTexture* xr_source = static_cast<VKTexture*>(g_presenter->GetXRPresentTexture());
+      if (!xr_source)
+      xr_source = m_swap_chain->GetCurrentTexture(); // fallback, e.g. the blank first frame
       const VkCommandBuffer cmd = g_command_buffer_mgr->GetCurrentCommandBuffer();
-      backbuffer->TransitionToLayout(cmd, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
-      RecordXRBlit(cmd, backbuffer->GetImage(), backbuffer->GetWidth(), backbuffer->GetHeight(),
+      xr_source->TransitionToLayout(cmd, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+      RecordXRBlit(cmd, xr_source->GetImage(), xr_source->GetWidth(), xr_source->GetHeight(),
                    XR::GetCurrentImage(), XR::GetSwapchainWidth(), XR::GetSwapchainHeight());
       VKTexture* ui = static_cast<VKTexture*>(g_framebuffer_manager->GetXRUITexture());
       if (ui)

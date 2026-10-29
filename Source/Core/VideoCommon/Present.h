@@ -17,6 +17,7 @@
 #include <tuple>
 
 class AbstractTexture;
+class AbstractFramebuffer;
 struct SurfaceInfo;
 enum class DolphinKey;
 
@@ -54,6 +55,7 @@ public:
   float GetBackbufferScale() const { return m_backbuffer_scale; }
   u32 AutoIntegralScale() const;
   AbstractTextureFormat GetBackbufferFormat() const { return m_backbuffer_format; }
+  AbstractTexture* GetXRPresentTexture() const { return m_xr_present_texture.get(); }
   void SetSuggestedWindowSize(int width, int height);
   void SetBackbuffer(int backbuffer_width, int backbuffer_height);
   void SetBackbuffer(SurfaceInfo info);
@@ -162,6 +164,9 @@ private:
   int m_last_window_request_width = 0;
   int m_last_window_request_height = 0;
 
+  void RenderXRTarget();
+  std::unique_ptr<AbstractTexture> m_xr_present_texture;
+  std::unique_ptr<AbstractFramebuffer> m_xr_present_framebuffer;
   std::unique_ptr<VideoCommon::PostProcessing> m_post_processor;
   std::unique_ptr<VideoCommon::OnScreenUI> m_onscreen_ui;
 
