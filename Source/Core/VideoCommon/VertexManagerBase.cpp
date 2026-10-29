@@ -565,10 +565,8 @@ void VertexManagerBase::Flush()
   Common::SmallVector<u32, 8> texture_units;
   std::array<SamplerState, 8> samplers;
   bool xr_uses_efb_copy = false;
-  bool xr_copies_all_ui = true;
   bool xr_copies_all_flat = true;
   bool xr_copies_all_old = true;
-  std::string xr_copy_info;
   if (!m_cull_all)
   {
     if (!g_ActiveConfig.bGraphicMods)
@@ -581,17 +579,10 @@ void VertexManagerBase::Flush()
         if (cache_entry->IsEfbCopy())
         {
           xr_uses_efb_copy = true;
-          if (!cache_entry->xr_ui_content)
-            xr_copies_all_ui = false;
           if (!cache_entry->xr_flat_only)
             xr_copies_all_flat = false;
           if (!cache_entry->xr_flat_only && XR::FrameNo() == cache_entry->xr_frame)
             xr_copies_all_old = false;
-          xr_copy_info += fmt::format("{}x{}@{}{} ", cache_entry->GetWidth(),
-                                      cache_entry->GetHeight(),
-                                      XR::FrameNo() - cache_entry->xr_frame,
-                                      cache_entry->xr_flat_only ? "f" : "k");
-
         }
         const float custom_tex_scale = cache_entry->GetWidth() / float(cache_entry->native_width);
         samplers[i] = TextureCacheBase::GetSamplerState(
@@ -654,18 +645,8 @@ void VertexManagerBase::Flush()
 
     if (!skip)
     {
-      XR::NoteDrawTextures(xr_uses_efb_copy, xr_copies_all_ui, xr_copies_all_flat,
-                           xr_copies_all_old);
+      XR::NoteDrawTextures(xr_uses_efb_copy, xr_copies_all_flat, xr_copies_all_old);
       XR::SetCurrentDrawIsUi(XR::IsUiDraw(xfmem.projection.type != ProjectionType::Perspective));
-      if (xfmem.projection.type != ProjectionType::Perspective && xr_uses_efb_copy &&
-          !xr_copies_all_flat && !XR::CurrentDrawIsUi())
-      {
-        const std::string desc = fmt::format(
-            "indices={} blend={} src={} dst={} copies=[{}]", m_index_generator.GetIndexLen(),
-            bpmem.blendmode.blend_enable.Value(), bpmem.blendmode.src_factor.Value(),
-            bpmem.blendmode.dst_factor.Value(), xr_copy_info);
-        XR::NoteEDraw(desc.c_str());
-      }
       const s32 xr_tex_layer = XR::CurrentDrawTexLayer();
       if (pixel_shader_manager.constants.xr_tex_layer != xr_tex_layer)
       {
@@ -891,20 +872,6 @@ void VertexManagerBase::UpdatePipelineConfig()
 
     BlendingState new_bs = {};
     new_bs.Generate(bpmem);
-    if (xr_ui)
-    {
-      static std::set<u32> s_xr_seen_ui_blend;
-      if (s_xr_seen_ui_blend.insert(new_bs.hex).second)
-      {
-        INFO_LOG_FMT(VIDEO,
-                     "XR: new UI blend state: blend={} logic_op={} ({}) subtract={} color_update={} "
-                     "alpha_update={} src={} dst={}",
-                     new_bs.blend_enable.Value(), new_bs.logic_op_enable.Value(),
-                     static_cast<u32>(new_bs.logic_mode.Value()), new_bs.subtract.Value(),
-                     new_bs.color_update.Value(), new_bs.alpha_update.Value(),
-                     new_bs.src_factor.Value(), new_bs.dst_factor.Value());
-      }
-    }
     if (xr_ui && !new_bs.logic_op_enable)
     {
       new_bs.alpha_update = new_bs.color_update;

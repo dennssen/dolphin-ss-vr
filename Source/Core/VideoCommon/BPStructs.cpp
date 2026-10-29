@@ -325,8 +325,6 @@ static void BPWritten(PixelShaderManager& pixel_shader_manager, XFStateManager& 
         framebuffer_copy_data.half_scale = PE_copy.half_scale;
         framebuffer_copy_data.y_scale = 1.0;
         framebuffer_copy_data.copy_height = copy_height;
-        XR::NoteCopy();
-        XR::TraceEvent('C');
         auto resolved_data = g_texture_cache->ResolveFramebufferCopyData(framebuffer_copy_data);
         g_texture_cache->CopyRenderTargetToTexture(std::ref(resolved_data));
       }
@@ -338,8 +336,6 @@ static void BPWritten(PixelShaderManager& pixel_shader_manager, XFStateManager& 
         g_bounding_box->Disable(pixel_shader_manager);
 
         XR::LatchPose();
-        XR::TraceEvent('X');
-        XR::FlushTrace();
         XR::EndFrameStructure();
 
         float yScale;

@@ -3273,10 +3273,8 @@ RcTcacheEntry TextureCacheBase::SetupCopyEntry(FramebufferManager* frame_buffer_
     else
     {
       entry->SetEfbCopy(resolved_data.source_data.dest_stride);
-      entry->xr_ui_content = XR::TakeCopyContentIsUi();
       entry->xr_flat_only = XR::TakeCopyContentIsFlat();
       entry->xr_frame = XR::FrameNo();
-      XR::TraceEvent(entry->xr_ui_content ? 'K' : (entry->xr_flat_only ? 'f' : 'k'));
     }
     entry->may_have_overlapping_textures = false;
     entry->is_custom_tex = false;

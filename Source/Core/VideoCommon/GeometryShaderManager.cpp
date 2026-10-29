@@ -48,9 +48,7 @@ void GeometryShaderManager::SetVSExpand(VSExpand expand)
 
 void GeometryShaderManager::SetConstants(PrimitiveType prim)
 {
-  const bool is_perspective = xfmem.projection.type == ProjectionType::Perspective;
   const u32 xr_ortho = XR::CurrentDrawIsUi() ? 1u : 0u;
-  XR::TraceEvent(is_perspective ? 'P' : (xr_ortho != 0 ? 'U' : 'O'));
   if (constants.xr_ortho != xr_ortho)
   {
     constants.xr_ortho = xr_ortho;

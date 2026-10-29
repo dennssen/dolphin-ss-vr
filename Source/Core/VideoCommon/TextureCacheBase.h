@@ -174,7 +174,6 @@ struct TCacheEntry
   TextureAndTLUTFormat format;
   u32 memory_stride = 0;
   bool is_efb_copy = false;
-  bool xr_ui_content = false;
   bool xr_flat_only = false;
   bool xr_frame_is_2d = false;
   u64 xr_frame = 0;

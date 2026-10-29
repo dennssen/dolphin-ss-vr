@@ -45,16 +45,11 @@ namespace XR
   int CurrentDrawTexLayer();
   bool IsUiDraw(bool is_ortho);
   void SetUIContentSize(uint32_t width, uint32_t height);
-  void NoteCopy();
   void EndFrameStructure();
   uint64_t FrameNo();
   bool LastFrameWas2D();
   void SetPresentedFrameIs2D(bool is_2d);
 
-  void TraceEvent(char c);
-  void NoteDrawTextures(bool uses_efb_copy, bool copy_is_ui, bool copies_all_flat, bool copies_all_old);
-  void NoteEDraw(const char* desc);
-  bool TakeCopyContentIsUi();
+  void NoteDrawTextures(bool uses_efb_copy, bool copies_all_flat, bool copies_all_old);
   bool TakeCopyContentIsFlat();
-  void FlushTrace();
 }

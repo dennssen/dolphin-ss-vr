@@ -43,24 +43,14 @@ namespace
   std::atomic<uint64_t> s_pose_generation{0};
   int s_current_tex_layer = -1;
   bool s_current_draw_is_ui = false;
-  bool s_draw_copy_is_ui = false;
   bool s_draw_copies_all_flat = true;
   bool s_draw_copies_all_old = false;
-  uint32_t s_copy_ui_draws = 0;
-  uint32_t s_copy_eye_draws = 0;
   bool s_draw_uses_efb_copy = false;
   bool s_seen_perspective = false;
   bool s_efb_tainted = false; // a draw this frame sampled a copy that holds 3D content
   uint64_t s_frame_no = 0;
   bool s_presented_2d = false;
-  bool s_prev_frame_had_perspective = false;
-  uint32_t s_amb_draws = 0; // flat draws issued before any perspective draw this frame
-  uint32_t s_draw_index = 0;
-  uint32_t s_ui_start = ~0u; // from the previous frame; ~0 means nothing counts as UI
-  uint32_t s_ui_start_next = ~0u; // being collected for the next frame
-  std::string s_trace;
-  std::string s_e_notes;
-  char s_trace_last = 0;
+  bool s_finished_frame_had_perspective = false;
 
   struct Vec3
   {
@@ -852,7 +842,6 @@ namespace XR
   void SetCurrentDrawIsUi(bool is_ui)
   {
     s_current_draw_is_ui = is_ui;
-    if (is_ui) s_copy_ui_draws++; else s_copy_eye_draws++;
   }
 
   bool CurrentDrawIsUi()
@@ -869,16 +858,13 @@ namespace XR
       return false;
     }
     const bool ui = s_seen_perspective;
-    if (s_draw_uses_efb_copy && !s_draw_copy_is_ui)
+    if (s_draw_uses_efb_copy)
     {
       if (!s_draw_copies_all_flat && !s_draw_copies_all_old)
         return false;  // samples a copy of this frame's scene
       if (ui)
         s_current_tex_layer = 0;  // old and flat-only copies hold the picture in the eye layers
     }
-
-    if (!s_seen_perspective)
-      s_amb_draws++;
 
     return ui;
   }
@@ -888,30 +874,19 @@ namespace XR
     return s_current_tex_layer;
   }
 
-  void SetUIContentSize(uint32_t width, uint32_t height)
+    void SetUIContentSize(uint32_t width, uint32_t height)
   {
     s_ui_content_w = width;
     s_ui_content_h = height;
   }
 
-  void NoteCopy()
-  {
-    s_ui_start_next = s_draw_index;
-  }
-
-  void NoteDrawTextures(bool uses_efb_copy, bool copy_is_ui, bool copies_all_flat, bool copies_all_old)
+  void NoteDrawTextures(bool uses_efb_copy, bool copies_all_flat, bool copies_all_old)
   {
     s_draw_uses_efb_copy = uses_efb_copy;
-    s_draw_copy_is_ui = copy_is_ui;
     s_draw_copies_all_flat = copies_all_flat;
     s_draw_copies_all_old = copies_all_old;
     if (uses_efb_copy && !copies_all_flat)
       s_efb_tainted = true;
-  }
-
-  bool TakeCopyContentIsUi()
-  {
-    return s_copy_ui_draws > 0 && s_copy_eye_draws == 0;
   }
 
   bool TakeCopyContentIsFlat()
@@ -921,31 +896,15 @@ namespace XR
 
   void EndFrameStructure()
   {
-    if (s_amb_draws > 0)
-    {
-      const bool predicted_ui = !s_prev_frame_had_perspective;
-      const bool actual_ui = !s_seen_perspective;
-      static int s_amb_log = 0;
-      if (predicted_ui != actual_ui || (s_seen_perspective && (s_amb_log++ % 60) == 0))
-      {
-        INFO_LOG_FMT(VIDEO, "XR: {} flat draws before any 3D: predicted_ui={} actual_ui={} {}",
-                 s_amb_draws, predicted_ui, actual_ui,
-                 predicted_ui == actual_ui ? "ok" : "WRONG");
-      }
-      s_amb_draws = 0;
-    }
-    s_prev_frame_had_perspective = s_seen_perspective;
+    s_finished_frame_had_perspective = s_seen_perspective;
     s_seen_perspective = false;
     s_efb_tainted = false;
     s_frame_no++;
-    s_draw_index = 0;
-    s_copy_ui_draws = 0;
-    s_copy_eye_draws = 0;
   }
 
   bool LastFrameWas2D()
   {
-    return !s_prev_frame_had_perspective;
+    return !s_finished_frame_had_perspective;
   }
 
   uint64_t FrameNo()
@@ -956,66 +915,5 @@ namespace XR
   void SetPresentedFrameIs2D(bool is_2d)
   {
     s_presented_2d = is_2d;
-  }
-
-  void TraceEvent(char c)
-  {
-    if (s_draw_uses_efb_copy)
-    {
-      if (c == 'O')
-        c = s_draw_copies_all_flat ? 'F' : 'E';
-      else if (c == 'U')
-        c = 'V';
-    }
-
-    if (c == s_trace_last || s_trace.size() >= 400)
-    {
-      return;
-    }
-    s_trace_last = c;
-    s_trace.push_back(c);
-  }
-
-  void FlushTrace()
-  {
-    const bool had_p = s_trace.find('P') != std::string::npos;
-    static std::string s_last_logged;
-    if (s_trace != s_last_logged)
-    {
-      s_last_logged = s_trace;
-      INFO_LOG_FMT(VIDEO, "XR: changed trace {} {}", had_p ? "3D" : "2D", s_trace);
-    }
-
-    static std::string s_last_e_notes;
-    if(s_e_notes != s_last_e_notes)
-    {
-      s_last_e_notes = s_e_notes;
-      INFO_LOG_FMT(VIDEO, "XR: E draws {}", s_e_notes);
-    }
-    s_e_notes.clear();
-
-    static int s_3d_frames = 0;
-    static std::string s_last_2d;
-    if (s_trace.find('P') != std::string::npos)
-    {
-      if ((s_3d_frames++ % 300) == 0)
-        INFO_LOG_FMT(VIDEO, "XR: pass trace {}", s_trace);
-    }
-    else if (s_trace != s_last_2d)
-    {
-      s_last_2d = s_trace;
-      INFO_LOG_FMT(VIDEO, "XR: 2D pass trace {}", s_trace);
-    }
-    s_trace.clear();
-    s_trace_last = 0;
-  }
-
-  void NoteEDraw(const char* desc)
-  {
-    if (s_e_notes.size() < 800)
-    {
-      s_e_notes += desc;
-      s_e_notes += " | ";
-    }
   }
 }
